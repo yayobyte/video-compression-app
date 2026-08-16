@@ -1,0 +1,26 @@
+{
+  "expo": {
+    "name": "Clippress",
+    "slug": "clippress-mobile",
+    "version": "0.0.1",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "newArchEnabled": true,
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.clippress.mobile",
+      "infoPlist": {
+        "NSAppTransportSecurity": {
+          "NSAllowsLocalNetworking": true
+        },
+        "NSLocalNetworkUsageDescription": "Connect to your compression server on the local network."
+      }
+    },
+    "android": {
+      "package": "com.clippress.mobile"
+    },
+    "plugins": [
+      "expo-video"
+    ]
+  }
+}

@@ -1,7 +1,17 @@
 # Video Compression Platform — Architecture Handoff
 
-Status: **Architecture proposal**  
+Status: **Implemented with deviations (see below). This file is the original design proposal; treat the details in it as reference, and use `RESUME.md` for the actual current state.**  
 Scope: Web application first, with a shared domain layer for a future Expo/React Native mobile app.
+
+### Deviations from this proposal in the shipped implementation
+
+- Repository layout is flat, not `apps/`/`packages/` exploded: `src/` (web), `mobile/`, `server/`, `shared/domain.ts`. The shared "package" is the single `shared/domain.ts` file consumed by both apps (web + mobile) via Vite/TS and Metro (see `mobile/metro.config.js`).
+- Concrete progress/profile types live in `shared/domain.ts` (`PROFILES`, `outputNameFor`, `formatBytes`, Codec/Crf); they differ slightly from the proposed TS interfaces above (e.g. output name template `{baseName}.compressed.{codec}.crf{crf}.mp4`).
+- Built the platform contracts *in practice* rather than formally: the web compression adapter wraps `@ffmpeg/core-mt` (`src/App.tsx`, `src/persistence.ts`); the mobile compression adapter is a client for the local `server/` (Express + ffmpeg) HTTP service — the "no upload by default" guideline now reads "the web app never uploads; the mobile app uploads to a local/self-hosted service by design."
+- "On-device for the initial release" applied to the web app only; the mobile app's compression runs server-side (native ffmpeg on the host Mac) because iOS on-device HEVC encoding is constrained and a local server was the pragmatic path.
+- Jobs on the server are sequential (single queue), matching the "sequential processing as the safe initial default" recommendation.
+- Status/UX follow the proposal: card states, per-card progress, individual CRF override (via a per-card profile re-select), original/compressed open, re-convert. The web app adds IndexedDB persistence + Wake Lock on top.
+- Batch concurrency: jobs queue and run one-at-a-time on both the web app (`startBatch` runs the next queued item as each finishes — see `src/App.tsx` ~line 336) and the server (single sequential queue).
 
 ## 1. Product goal
 
