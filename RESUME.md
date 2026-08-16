@@ -1,6 +1,6 @@
 # Session Resume — Video Compression Platform (web WASM + server + iOS app)
 
-> Status: **Working end-to-end.** Web app compresses locally in Chrome (WASM H.265, progress bar, reload-safe); mobile app (Expo SDK 54) converts through the local Node/ffmpeg server with live upload/compress %, per-card preview, compression-ratio readout, and skip-already-converted detection. Standalone iOS build path exists (Xcode project generated).
+> Status: **Working end-to-end.** Web app compresses locally in Chrome (WASM H.265, progress bar, reload-safe); mobile app (Expo Go + standalone Release build on iPhone) converts through the local Node/ffmpeg server with live upload/compress %, per-card preview, compression-ratio readout, skip-already-converted detection, health checks, and profile toggles. Standalone iOS build exists; vector app icon + splash integrated.
 > Web gotchas fixed: true-4K is blocked up-front (honest limit), `+faststart` removed (was "stuck at 1%"), outputs validated so OOM can never report false success.
 > Server (`server/`) logs every step so you can watch it work.
 
@@ -138,6 +138,48 @@ Likely causes, in order: (1) stale/cached tab → hard reload `Cmd+Shift+R`; (2)
 
 ### Repo hygiene / gitignore (CPU mystery solved)
 - Xcode's Source Control had been diffing the `DJI/` folder's untracked videos (`git diff --no-index -- /dev/null <file>`), pinning CPU at ~97% per file. Fix: killed those git processes and ignored the media: `.gitignore` now has `DJI/`, `*.MP4`, `*.mov`, `*.MOV`. NOTE: repo has almost nothing committed yet (only `README.md` tracked; `.gitignore`, `server/`, `mobile/`, docs, etc. are all untracked) — safe to `git add` now that media is ignored.
+- `.playwright-cli/` (Playwright CLI debug artifacts: console logs, page `.yml` snapshots, downloaded test clips incl. a 57 MB `hard60-*.mp4`) is also gitignored now — it's ~120 MB of throwaway debugging output, not code, and nothing Playwright is *tracked*.
+
+## Session: App icon + splash, theme system, mobile UX polish (standalone build on device)
+
+### App icon + splash screen (vector logo workflow)
+- `mobile/assets/logo.svg` is the vector master (compress-bracket + play core in violet `#494fdf`/`#7b81ff`/white on a 512×512 viewBox, content ~66% of canvas so the iOS mask won't crop it — corners are empty).
+- **IMPORTANT gotcha**: this SDK's icon pipeline (`@expo/image-utils`) does **NOT accept SVG** — only png/jpeg/webp/gif (`Invalid mimeType` at prebuild). Workflow is now: edit `logo.svg` → rasterize → prebuild.
+- Rasterized with `sharp` (added as root `devDependency`) at `density:600`: `icon.png`+`icon-adaptive.png` (1024, transparent), `splash-icon.png` (512), `favicon.png` (64); plus `icon-solid.png` (1024, ink `#0a0a0a` background baked in, opaque — iOS home-screen icons must not be transparent).
+- `mobile/app.json`: `icon` + `ios.icon` = `icon-solid.png`, `android.adaptiveIcon.foregroundImage` = `icon-adaptive.png` + `backgroundColor #0a0a0a`, `expo-splash-screen` plugin (`image: splash-icon.png`, `imageWidth: 180`, `resizeMode: contain`, `backgroundColor #0a0a0a`).
+- Ran `npx expo install expo-splash-screen` (→ `expo-splash-screen@~31.0.13`, added to plugins). Prebuild now succeeds; verified `App-Icon-1024x1024@1x.png` is **byte-identical** to `icon-solid.png` (0-diff pixel check; 28.3% non-ink coverage) and `SplashScreen.storyboard` regenerates. `expo-video` pod still intact.
+- Sharp rasterize used once ad-hoc; not yet saved as an npm script (offered to user, declined — "leave it for now").
+
+### Compiled Release build on the iPhone (first real device build)
+- Device: "iPhone 16 Yayo2", UDID `00008140-000D44CA26C1801C` (found via `xcrun xctrace list devices`; paired p, available).
+- `cd mobile && npx pod-install` → 81 deps (adds `ExpoSplashScreen`). Then `npx expo run:ios --configuration Release --device 00008140-000D44CA26C1801C` → **Build Succeeded, 0 errors/warnings**, installed, launched via `xcrun devicectl device process launch`. Ver: `main.jsbundle` (1.8 MB) embedded — truly standalone, no Metro.
+- LAN IP today: **`http://192.168.50.183:8787`** (checked via `ipconfig getifaddr en0`; ignore the `169.254.x` en6 link-local). iPhone asked for Local Network permission on first connect.
+- **Expo Go vs compiled**: Expo Go auto-detects the host from `Constants.expoConfig.hostUri`; compiled apps have no Metro host → MUST enter the LAN IP manually (persisted in AsyncStorage). Builds with free Apple ID expire after 7 days.
+- Why no Node service on iPhone (user asked): (1) no Node runtime + no third-party JIT allowed, (2) apps can't open listening ports for inbound traffic, (3) no background execution for long-running services. On-device alternative = link FFmpeg natively (see follow-ups).
+
+### Mobile UX: profile toggles, health check, foreground recovery, divider
+- **Codec + Compression switches** (replacing segmented buttons): global PROFILE card has two `Switch` rows (Codec H.264⇄H.265/HEVC; Compression CRF 25 "Higher quality"⇄28 "Smaller file"); per-card has compact mini-switches (0.75× scale) wired to `setProfileOn` (still re-checks for existing outputs). Alignment fix: label + value text on the LEFT (`switchInfo`, flex:1), switch alone pinned to the right edge so both switches line up regardless of label width.
+- **Health check**: `checkServerHealth(url)` in `compressionService.ts` fetches `/api/health` with a 4s AbortController timeout → `{ok, service?, error?}`. Runs on app load, on **Apply**, and on foreground. UI: dot + "Service online/offline/Checking…" label, error text wraps on its own line below.
+- **Check button** — final state: a teal-accent pill (`colors.accent`) with dark text, inline after the status dot+label. History (user iterated): bigger field+button row → rejected; link-style "Check" → rejected; pill starting violet → white-hot → settled on **teal**. 
+- **Divider** between PROFILE and COMPRESSION SERVICE groups (`divider` style: 1px, textMuted at 40% opacity, `marginVertical`).
+- **AppState foreground recovery**: `AppState.addEventListener('change', → 'active')` re-pings health and re-runs `runConvert` on any card still `converting`; safe because `runConvert` early-returns if `busy` is still true (poll loop merely suspended while backgrounded — encodings run on the Mac, so progress survives). Uses refs (`runConvertRef`, `assetsRef`, etc.) so the listener subscribes once without stale closures.
+
+### Theme system (this session's refactor)
+- New `mobile/src/theme.ts`: single source of truth for color, spacing, radius, typography, and reusable composite styles. **No hardcoded hex/magic numbers remain in `App.tsx`.**
+  - `colors` — full palette (ink/surfaces/brand-violet/teal/status/hairlines).
+  - `spacing` — standardized **4px grid**: `xxs4 sm8 md12 lg16 xl20 xxl24 xxxl32 section40 block48`.
+  - `radius` — `sm8 md12 lg16 xl20 full`.
+  - `typography` — fixed ramp: `brand18/800 title30/800 heading16/700 name15/700 body14 bodyEmphasis14/700 label11/700·ls2 caption12 captionEmphasis12/700 button14/800 link14/700 micro10/700 input14` (see below).
+  - `surfaces`/`buttons`/`gaps` — reusable: `card` `pill` `field` `divider`; `primary` `secondary` `link` `pill`; gap helpers.
+- **TextInput alignment gotcha (the bug driving the theme work)**: spreading `typography.body` (which carries `lineHeight:21`) onto a TextInput pushes the text off-center on iOS — inputs must NOT have a lineHeight. Fixed with a dedicated `typography.input` (fontSize 14, no lineHeight) + `textAlignVertical:'center'` on the server URL field.
+- DESIGN.md updated: new "Mobile App Token Implementation" section documenting the theme and the deliberate deviations (spacing rounded to the 4px grid; radius pulled in to `lg16 xl20`).
+- **Verification**: `npx tsc --noEmit` clean; `npx expo export --platform ios` bundles (1.81 MB HBC); `expo run:ios --configuration Release` re-built + reinstalled clean after the theme refactor.
+
+### Web ↔ mobile theming (comparison, NOT yet shared)
+- Web has **no text inputs** (only hidden file inputs + buttons), so the input-alignment fix is mobile-only; its segmented profile buttons are unaffected.
+- Web (`src/App.css`) still hardcodes hex literals and does NOT follow DESIGN.md; mobile now has the token system. They already drift in value. Follow-up (PROGRESS.md #9): extract tokens to a shared source (`shared/tokens.ts`), generate CSS custom properties for web from the same file, wire `theme.ts` to it — one truth, two renderers.
+- README.md rewritten fully: Vite boilerplate removed; now project description + doc-file references (ARCHITECTURE/DESIGN/PROGRESS/RESUME) + install/run steps for web, server, mobile, standalone iOS + key gotchas.
+
 ## Open Follow-ups (pruned; completed items moved above)
 
 - **4K strategy decision** — web blocks anything above 2,592,000 px / ~1080×2400 with "Use a smaller clip or the native desktop app". Verified working up to 1080×2288 in WASM; true 4K still OOMs. If real 4K is wanted later: (a) automatic downscale in-app (`-vf scale=...` + output-resolution option), (b) chunked encode, or (c) ship with the guard as the honest limit (current behavior). Note the mobile app converts any size via the server.

@@ -2,12 +2,13 @@ import { StatusBar } from 'expo-status-bar'
 import * as DocumentPicker from 'expo-document-picker'
 import * as Sharing from 'expo-sharing'
 import { useVideoPlayer, VideoView } from 'expo-video'
-import { useEffect, useState } from 'react'
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native'
+import { useEffect, useRef, useState } from 'react'
+import { ActivityIndicator, AppState, Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View } from 'react-native'
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context'
 import { formatBytes } from '../shared/domain'
 import type { Codec, Crf } from '../shared/domain'
-import { compressVideo, findExistingCompressed, resolveServerUrl, saveServerUrl } from './src/compressionService'
+import { checkServerHealth, compressVideo, findExistingCompressed, resolveServerUrl, saveServerUrl } from './src/compressionService'
+import { buttons, colors, gaps, radius, spacing, surfaces, typography } from './src/theme'
 
 type JobStatus = 'ready' | 'converting' | 'completed' | 'failed' | 'cancelled'
 
@@ -25,9 +26,6 @@ type VideoAsset = {
   error?: string
 }
 
-const CODECS: Codec[] = ['h265', 'h264']
-const CRFS: Crf[] = [25, 28]
-
 const STATUS_LABEL: Record<JobStatus, string> = {
   ready: 'Ready',
   converting: 'Converting',
@@ -44,15 +42,10 @@ const STATUS_STYLE = {
   cancelled: 'status_cancelled',
 } as const
 
-const colors = {
-  background: '#121316',
-  card: '#292b30',
-  elevated: '#35373d',
-  text: '#ffffff',
-  muted: '#9b9da7',
-  accent: '#a8ecd9',
-  accentStrong: '#6f74ff',
-  danger: '#ffabb2',
+const healthStatus = (health: { ok: boolean; error?: string } | null) => {
+  if (health === null) return { label: 'Checking service…', color: colors.textMuted, dot: colors.textMuted }
+  if (health.ok) return { label: 'Service online', color: colors.accent, dot: colors.online }
+  return { label: 'Service offline', color: colors.danger, dot: colors.danger, error: health.error }
 }
 
 const ratioText = (asset: VideoAsset) => {
@@ -77,13 +70,20 @@ export default function App() {
   const [serverUrl, setServerUrl] = useState('')
   const [serverInput, setServerInput] = useState('')
   const [savingServer, setSavingServer] = useState(false)
+  const [serverHealth, setServerHealth] = useState<{ ok: boolean; error?: string } | null>(null)
   const [preview, setPreview] = useState<string | null>(null)
+
+  const pingServer = async (url: string) => {
+    setServerHealth(null)
+    setServerHealth(await checkServerHealth(url))
+  }
 
   useEffect(() => {
     void (async () => {
       const url = await resolveServerUrl()
       setServerUrl(url)
       setServerInput(url)
+      if (url) void pingServer(url)
     })()
   }, [])
 
@@ -98,6 +98,7 @@ export default function App() {
     void saveServerUrl(url).finally(() => {
       setServerUrl(url)
       setSavingServer(false)
+      void pingServer(url)
     })
   }
 
@@ -160,6 +161,26 @@ export default function App() {
     }
   }
 
+  const runConvertRef = useRef(runConvert)
+  runConvertRef.current = runConvert
+  const serverUrlRef = useRef(serverUrl)
+  serverUrlRef.current = serverUrl
+  const pingServerRef = useRef(pingServer)
+  pingServerRef.current = pingServer
+  const assetsRef = useRef(assets)
+  assetsRef.current = assets
+
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', (state) => {
+      if (state !== 'active') return
+      const url = serverUrlRef.current
+      if (url) void pingServerRef.current(url)
+      const stuck = assetsRef.current.filter((asset) => asset.status === 'converting')
+      for (const asset of stuck) void runConvertRef.current(asset)
+    })
+    return () => sub.remove()
+  }, [])
+
   const shareOutput = async (asset: VideoAsset) => {
     if (!asset.outputUri) return
     if (await Sharing.isAvailableAsync()) {
@@ -196,27 +217,35 @@ export default function App() {
             <View style={styles.pill}><Text style={styles.pillText}>{assets.length ? `${assets.length} videos loaded` : 'Local-only processing'}</Text></View>
           </View>
 
-          <Text style={styles.eyebrow}>VIDEO WORKSPACE • IPHONE</Text>
           <Text style={styles.title}>Make your video library <Text style={styles.titleAccent}>lighter.</Text></Text>
-          <Text style={styles.subtitle}>Choose a profile, import videos, and convert through your compression service.</Text>
 
           <View style={styles.controlCard}>
             <Text style={styles.controlLabel}>PROFILE</Text>
-            <Text style={styles.controlHint}>Applied to new imports and ready videos.</Text>
-            <View style={styles.segmented}>
-              {CODECS.map((codec) => (
-                <Pressable key={codec} onPress={() => setGlobalProfile((profile) => ({ ...profile, codec }))} style={[styles.segment, globalProfile.codec === codec && styles.segmentSelected]}>
-                  <Text style={[styles.segmentText, globalProfile.codec === codec && styles.segmentTextSelected]}>{codec === 'h265' ? 'H.265 / HEVC' : 'H.264'}</Text>
-                </Pressable>
-              ))}
+            <View style={styles.switchRow}>
+              <View style={styles.switchInfo}>
+                <Text style={styles.switchLabel}>Codec</Text>
+                <Text style={styles.switchValue}>{globalProfile.codec === 'h265' ? 'H.265 / HEVC' : 'H.264'}</Text>
+              </View>
+              <Switch
+                value={globalProfile.codec === 'h265'}
+                onValueChange={(enabled) => setGlobalProfile((profile) => ({ ...profile, codec: enabled ? 'h265' : 'h264' }))}
+                trackColor={{ true: colors.primarySoft, false: colors.elevated }}
+                thumbColor={colors.text}
+              />
             </View>
-            <View style={styles.segmented}>
-              {CRFS.map((crf) => (
-                <Pressable key={crf} onPress={() => setGlobalProfile((profile) => ({ ...profile, crf }))} style={[styles.segment, globalProfile.crf === crf && styles.segmentSelected]}>
-                  <Text style={[styles.segmentText, globalProfile.crf === crf && styles.segmentTextSelected]}>CRF {crf}</Text>
-                </Pressable>
-              ))}
+            <View style={styles.switchRow}>
+              <View style={styles.switchInfo}>
+                <Text style={styles.switchLabel}>Compression</Text>
+                <Text style={styles.switchValue}>CRF {globalProfile.crf} · {globalProfile.crf === 25 ? 'Higher quality' : 'Smaller file'}</Text>
+              </View>
+              <Switch
+                value={globalProfile.crf === 25}
+                onValueChange={(highQuality) => setGlobalProfile((profile) => ({ ...profile, crf: highQuality ? 25 : 28 }))}
+                trackColor={{ true: colors.primarySoft, false: colors.elevated }}
+                thumbColor={colors.text}
+              />
             </View>
+            <View style={styles.divider} />
             <View style={styles.serverRow}>
               <Text style={styles.controlLabel}>COMPRESSION SERVICE</Text>
               <View style={styles.serverInputRow}>
@@ -224,7 +253,7 @@ export default function App() {
                   value={serverInput}
                   onChangeText={setServerInput}
                   placeholder="http://192.168.1.10:8787"
-                  placeholderTextColor={colors.muted}
+                  placeholderTextColor={colors.textMuted}
                   autoCapitalize="none"
                   autoCorrect={false}
                   keyboardType="url"
@@ -234,6 +263,14 @@ export default function App() {
                   <Text style={styles.serverApplyText}>Apply</Text>
                 </Pressable>
               </View>
+              <View style={styles.serverStatusRow}>
+                <View style={[styles.serverStatusDot, { backgroundColor: healthStatus(serverHealth).dot }]} />
+                <Text style={[styles.serverStatusText, { color: healthStatus(serverHealth).color }]}>{healthStatus(serverHealth).label}</Text>
+                <Pressable style={styles.checkButton} onPress={() => void pingServer(serverUrl)}>
+                  <Text style={styles.checkButtonText}>Check</Text>
+                </Pressable>
+              </View>
+              {serverHealth && !serverHealth.ok && serverHealth.error ? <Text style={styles.serverStatusError}>{serverHealth.error}</Text> : null}
               {!serverInput && <Text style={styles.controlHint}>Leave empty to auto-detect when running in Expo Go.</Text>}
             </View>
           </View>
@@ -258,17 +295,27 @@ export default function App() {
                 </View>
               </View>
               <Text style={styles.cardMeta}>{formatBytes(asset.size)}</Text>
-              <View style={styles.miniSegmented}>
-                {CODECS.map((codec) => (
-                  <Pressable key={codec} onPress={() => setProfileOn(asset.id, asset.name, codec, asset.profile.crf)} style={[styles.miniSegment, asset.profile.codec === codec && styles.miniSegmentSelected]}>
-                    <Text style={[styles.miniText, asset.profile.codec === codec && styles.miniTextSelected]}>{codec.toUpperCase()}</Text>
-                  </Pressable>
-                ))}
-                {CRFS.map((crf) => (
-                  <Pressable key={crf} onPress={() => setProfileOn(asset.id, asset.name, asset.profile.codec, crf)} style={[styles.miniSegment, asset.profile.crf === crf && styles.miniSegmentSelected]}>
-                    <Text style={[styles.miniText, asset.profile.crf === crf && styles.miniTextSelected]}>{crf}</Text>
-                  </Pressable>
-                ))}
+              <View style={styles.cardProfileRow}>
+                <View style={styles.miniSwitch}>
+                  <Switch
+                    value={asset.profile.codec === 'h265'}
+                    onValueChange={(enabled) => setProfileOn(asset.id, asset.name, enabled ? 'h265' : 'h264', asset.profile.crf)}
+                    trackColor={{ true: colors.primarySoft, false: colors.elevated }}
+                    thumbColor={colors.text}
+                    style={styles.miniSwitchControl}
+                  />
+                  <Text style={styles.miniSwitchLabel}>{asset.profile.codec === 'h265' ? 'H.265' : 'H.264'}</Text>
+                </View>
+                <View style={styles.miniSwitch}>
+                  <Switch
+                    value={asset.profile.crf === 25}
+                    onValueChange={(highQuality) => setProfileOn(asset.id, asset.name, asset.profile.codec, highQuality ? 25 : 28)}
+                    trackColor={{ true: colors.primarySoft, false: colors.elevated }}
+                    thumbColor={colors.text}
+                    style={styles.miniSwitchControl}
+                  />
+                  <Text style={styles.miniSwitchLabel}>CRF {asset.profile.crf}</Text>
+                </View>
               </View>
               {(asset.status === 'converting') && (
                 <View>
@@ -291,7 +338,7 @@ export default function App() {
                 <Pressable onPress={() => setPreview((current) => current === asset.id ? null : asset.id)} style={styles.linkButton}><Text style={styles.linkText}>{preview === asset.id ? 'Close preview' : 'Preview'}</Text></Pressable>
                 {asset.status !== 'converting'
                   ? <Pressable onPress={() => void runConvert(asset)} style={styles.linkButton}><Text style={styles.linkText}>{asset.status === 'failed' ? 'Try again' : asset.status === 'completed' ? 'Re-convert' : 'Convert'}</Text></Pressable>
-                  : <ActivityIndicator size="small" color={colors.accentStrong} />}
+                  : <ActivityIndicator size="small" color={colors.primarySoft} />}
               </View>
             </View>
           ))}
@@ -305,64 +352,67 @@ export default function App() {
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.background },
-  scroll: { padding: 20, gap: 20 },
+  scroll: { padding: spacing.xl, gap: gaps.xl },
   header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  brand: { color: colors.text, fontWeight: '800', fontSize: 18 },
-  pill: { backgroundColor: colors.card, borderRadius: 999, paddingHorizontal: 12, paddingVertical: 6 },
-  pillText: { color: colors.muted, fontSize: 12 },
-  eyebrow: { color: colors.muted, fontSize: 11, letterSpacing: 2, marginTop: 12 },
-  title: { color: colors.text, fontSize: 30, fontWeight: '800', marginTop: 6 },
+  brand: { ...typography.brand, color: colors.text },
+  pill: { ...surfaces.pill },
+  pillText: { ...typography.caption, color: colors.textMuted },
+  title: { ...typography.title, color: colors.text, marginTop: spacing.xxs },
   titleAccent: { color: colors.accent },
-  subtitle: { color: colors.muted, fontSize: 14, marginTop: 6, lineHeight: 20 },
-  controlCard: { backgroundColor: colors.card, borderRadius: 16, padding: 16, gap: 10 },
-  controlLabel: { color: colors.muted, fontSize: 11, letterSpacing: 2 },
-  controlHint: { color: colors.muted, fontSize: 12 },
-  segmented: { flexDirection: 'row', gap: 8 },
-  segment: { flex: 1, backgroundColor: colors.elevated, borderRadius: 10, paddingVertical: 12, alignItems: 'center' },
-  segmentSelected: { backgroundColor: colors.accentStrong },
-  segmentText: { color: colors.text, fontSize: 14, fontWeight: '700' },
-  segmentTextSelected: { color: colors.text },
-  serverRow: { gap: 8, marginTop: 6 },
-  serverInputRow: { flexDirection: 'row', gap: 8 },
-  serverInput: { flex: 1, backgroundColor: colors.elevated, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 10, color: colors.text, fontSize: 13 },
-  serverApply: { backgroundColor: colors.accentStrong, borderRadius: 10, paddingHorizontal: 16, justifyContent: 'center' },
+  controlCard: { ...surfaces.card, gap: gaps.sm },
+  controlLabel: { ...typography.label, color: colors.textMuted },
+  controlHint: { ...typography.caption, color: colors.textMuted },
+  switchRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: spacing.xxs },
+  switchInfo: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: gaps.sm },
+  switchLabel: { ...typography.bodyEmphasis, color: colors.text },
+  switchValue: { ...typography.caption, color: colors.textMuted },
+  divider: { ...surfaces.divider, marginVertical: spacing.xxs },
+  serverRow: { gap: gaps.sm, marginTop: spacing.xxs },
+  serverInputRow: { flexDirection: 'row', gap: gaps.sm },
+  serverInput: { ...surfaces.field, flex: 1, paddingVertical: spacing.md, color: colors.text, ...typography.input, textAlignVertical: 'center' },
+  serverApply: { ...buttons.primary, paddingHorizontal: spacing.lg, justifyContent: 'center' },
   serverApplyDisabled: { opacity: 0.6 },
-  serverApplyText: { color: colors.text, fontWeight: '700' },
-  actions: { flexDirection: 'row', gap: 12 },
-  button: { borderRadius: 12, paddingVertical: 14, paddingHorizontal: 18, alignItems: 'center' },
-  buttonSecondary: { backgroundColor: colors.elevated, flex: 1 },
-  buttonPrimary: { backgroundColor: colors.accentStrong, flex: 1 },
-  buttonText: { color: colors.text, fontWeight: '700' },
-  buttonPrimaryText: { color: colors.text, fontWeight: '800' },
-  empty: { backgroundColor: colors.card, borderRadius: 16, padding: 24, alignItems: 'center', gap: 6 },
-  emptyTitle: { color: colors.text, fontWeight: '700', fontSize: 16 },
-  emptyBody: { color: colors.muted, fontSize: 13, textAlign: 'center' },
-  card: { backgroundColor: colors.card, borderRadius: 16, padding: 16, gap: 10 },
-  cardHead: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 8 },
-  cardName: { color: colors.text, fontWeight: '700', fontSize: 15, flex: 1 },
-  statusBadge: { flexDirection: 'row', alignItems: 'center', gap: 6, borderRadius: 999, paddingHorizontal: 10, paddingVertical: 4 },
+  serverApplyText: { ...typography.button, color: colors.text },
+  serverStatusRow: { flexDirection: 'row', alignItems: 'center', gap: gaps.sm, marginTop: spacing.sm },
+  serverStatusDot: { width: spacing.sm, height: spacing.sm, borderRadius: radius.sm },
+  serverStatusText: { ...typography.bodyEmphasis, color: colors.text },
+  serverStatusError: { ...typography.caption, color: colors.textMuted, flexShrink: 1, marginTop: spacing.xxs },
+  checkButton: { ...buttons.pill, backgroundColor: colors.accent },
+  checkButtonText: { ...typography.button, color: colors.background, fontSize: 13, lineHeight: 18 },
+  actions: { flexDirection: 'row', gap: gaps.md },
+  button: { borderRadius: radius.md, paddingVertical: spacing.lg, paddingHorizontal: spacing.xl, alignItems: 'center' },
+  buttonSecondary: { ...buttons.secondary, flex: 1 },
+  buttonPrimary: { ...buttons.primary, flex: 1 },
+  buttonText: { ...typography.button, color: colors.text },
+  buttonPrimaryText: { ...typography.button, color: colors.text },
+  empty: { ...surfaces.card, padding: spacing.xxl, alignItems: 'center', gap: gaps.sm },
+  emptyTitle: { ...typography.heading, color: colors.text },
+  emptyBody: { ...typography.body, color: colors.textMuted, textAlign: 'center' },
+  card: { ...surfaces.card, gap: gaps.sm },
+  cardHead: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: gaps.sm },
+  cardName: { ...typography.name, color: colors.text, flex: 1 },
+  statusBadge: { flexDirection: 'row', alignItems: 'center', gap: gaps.sm, borderRadius: radius.full, paddingHorizontal: spacing.md, paddingVertical: spacing.xxs },
   status_ready: { backgroundColor: colors.elevated },
-  status_converting: { backgroundColor: colors.accentStrong },
+  status_converting: { backgroundColor: colors.primarySoft },
   status_completed: { backgroundColor: colors.accent },
-  status_failed: { backgroundColor: '#6e2b30' },
+  status_failed: { backgroundColor: colors.dangerBg },
   status_cancelled: { backgroundColor: colors.elevated },
-  statusText: { color: colors.text, fontSize: 11, fontWeight: '700' },
-  cardMeta: { color: colors.muted, fontSize: 13 },
-  miniSegmented: { flexDirection: 'row', gap: 6 },
-  miniSegment: { backgroundColor: colors.elevated, borderRadius: 8, paddingHorizontal: 14, paddingVertical: 8 },
-  miniSegmentSelected: { borderWidth: 1, borderColor: colors.accentStrong },
-  miniText: { color: colors.text, fontSize: 12, fontWeight: '700' },
-  miniTextSelected: { color: colors.accent },
-  progressLabel: { color: colors.muted, fontSize: 11, marginBottom: 4 },
-  progressTrack: { height: 6, borderRadius: 3, backgroundColor: colors.elevated, overflow: 'hidden' },
-  progressFill: { height: 6, borderRadius: 3, backgroundColor: colors.accentStrong },
+  statusText: { ...typography.micro, color: colors.text },
+  cardMeta: { ...typography.body, color: colors.textMuted },
+  cardProfileRow: { flexDirection: 'row', gap: gaps.lg },
+  miniSwitch: { flexDirection: 'row', alignItems: 'center', gap: gaps.sm },
+  miniSwitchControl: { transform: [{ scaleX: 0.75 }, { scaleY: 0.75 }] },
+  miniSwitchLabel: { ...typography.captionEmphasis, color: colors.text },
+  progressLabel: { ...typography.caption, color: colors.textMuted, marginBottom: spacing.xxs },
+  progressTrack: { height: spacing.sm, borderRadius: radius.sm, backgroundColor: colors.elevated, overflow: 'hidden' },
+  progressFill: { height: spacing.sm, borderRadius: radius.sm, backgroundColor: colors.primarySoft },
   completedRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  completedText: { color: colors.accent, fontWeight: '700', fontSize: 13 },
-  ratioText: { color: colors.muted, fontSize: 12, marginTop: 2 },
-  errorText: { color: colors.danger, fontSize: 12, lineHeight: 17 },
-  preview: { width: '100%', height: 220, borderRadius: 10, backgroundColor: colors.elevated },
+  completedText: { ...typography.captionEmphasis, color: colors.accent },
+  ratioText: { ...typography.caption, color: colors.textMuted, marginTop: spacing.xxs },
+  errorText: { ...typography.caption, color: colors.danger, lineHeight: 17 },
+  preview: { width: '100%', height: 220, borderRadius: radius.md, backgroundColor: colors.elevated },
   cardActions: { flexDirection: 'row', justifyContent: 'space-between', minHeight: 20 },
-  linkButton: { paddingVertical: 4, paddingHorizontal: 2 },
-  linkText: { color: colors.accent, fontWeight: '700', fontSize: 14 },
-  footer: { color: colors.muted, fontSize: 12, textAlign: 'center', paddingTop: 8 },
+  linkButton: { ...buttons.link },
+  linkText: { ...typography.link, color: colors.accent },
+  footer: { ...typography.caption, color: colors.textMuted, textAlign: 'center', paddingTop: spacing.sm },
 })

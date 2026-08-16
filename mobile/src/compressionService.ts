@@ -37,6 +37,25 @@ export const resolveServerUrl = async (): Promise<string> => {
 
 export const saveServerUrl = (url: string) => AsyncStorage.setItem(URL_KEY, url.trim().replace(/\/+$/, '')).catch(() => undefined)
 
+export type ServerHealth = { ok: boolean; service?: string; error?: string }
+
+export const checkServerHealth = async (serverUrl: string, timeoutMs = 4000): Promise<ServerHealth> => {
+  const base = serverUrl.replace(/\/+$/, '')
+  if (!base) return { ok: false, error: 'No compression service address set.' }
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), timeoutMs)
+  try {
+    const res = await fetch(`${base}/api/health`, { signal: controller.signal })
+    if (!res.ok) return { ok: false, error: `Service responded ${res.status}.` }
+    const body = (await res.json().catch(() => ({}))) as { ok?: boolean; service?: string }
+    return { ok: body.ok !== false, service: body.service }
+  } catch (error) {
+    return { ok: false, error: error instanceof Error ? error.message : String(error) }
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
 export type CompressOptions = {
   serverUrl: string
   fileUri: string

@@ -1,0 +1,92 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="100%" height="100%" fill="none">
+  <!-- Safe Zone: Center ~80% (content kept within 80-432px range) -->
+  <g id="clippress-icon">
+    <!-- Left Compression Bracket / Film Frame (Violet #494fdf) -->
+    <path 
+      d="M 172 108
+         C 183 108 192 117 192 128
+         L 192 188
+         C 192 199 183 208 172 208
+         L 160 208
+         C 142 208 128 222 128 240
+         L 128 272
+         C 128 290 142 304 160 304
+         L 172 304
+         C 183 304 192 313 192 324
+         L 192 384
+         C 192 395 183 404 172 404
+         L 156 404
+         C 107 404 68 365 68 316
+         L 68 196
+         C 68 147 107 108 156 108
+         Z" 
+      fill="#494fdf" 
+    />
+
+    <!-- Right Compression Bracket / Film Frame (Violet #494fdf) -->
+    <path 
+      d="M 340 108
+         C 329 108 320 117 320 128
+         L 320 188
+         C 320 199 329 208 340 208
+         L 352 208
+         C 370 208 384 222 384 240
+         L 384 272
+         C 384 290 370 304 352 304
+         L 340 304
+         C 329 304 320 313 320 324
+         L 320 384
+         C 320 395 329 404 340 404
+         L 356 404
+         C 405 404 444 365 444 316
+         L 444 196
+         C 444 147 405 108 356 108
+         Z" 
+      fill="#494fdf" 
+    />
+
+    <!-- Upper Inward Squeeze Chevron (Highlight Accent #7B81FF) -->
+    <path 
+      d="M 236 120
+         L 256 142
+         L 276 120
+         C 283 113 295 113 302 120
+         C 309 127 309 139 302 146
+         L 269 179
+         C 262 186 250 186 243 179
+         L 210 146
+         C 203 139 203 127 210 120
+         C 217 113 229 113 236 120
+         Z" 
+      fill="#7B81FF" 
+    />
+
+    <!-- Center Play Core: High-contrast video play symbol (Crisp White #FFFFFF) -->
+    <path 
+      d="M 224 192
+         C 210 183 192 193 192 210
+         L 192 302
+         C 192 319 210 329 224 320
+         L 298 274
+         C 311 266 311 246 298 238
+         Z" 
+      fill="#FFFFFF" 
+    />
+
+    <!-- Lower Inward Squeeze Chevron (Highlight Accent #7B81FF) -->
+    <path 
+      d="M 236 392
+         L 256 370
+         L 276 392
+         C 283 399 295 399 302 392
+         C 309 385 309 373 302 366
+         L 269 333
+         C 262 326 250 326 243 333
+         L 210 366
+         C 203 373 203 385 210 392
+         C 217 399 229 399 236 392
+         Z" 
+      fill="#7B81FF" 
+    />
+  </g>
+</svg>

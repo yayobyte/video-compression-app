@@ -12,6 +12,7 @@ Scope: Web application first, with a shared domain layer for a future Expo/React
 - Jobs on the server are sequential (single queue), matching the "sequential processing as the safe initial default" recommendation.
 - Status/UX follow the proposal: card states, per-card progress, individual CRF override (via a per-card profile re-select), original/compressed open, re-convert. The web app adds IndexedDB persistence + Wake Lock on top.
 - Batch concurrency: jobs queue and run one-at-a-time on both the web app (`startBatch` runs the next queued item as each finishes — see `src/App.tsx` ~line 336) and the server (single sequential queue).
+- The `packages/ui-tokens` idea landed as `mobile/src/theme.ts` (colors, 4px spacing grid, radius, type ramp, reusable `surfaces`/`buttons`/`gaps` consumed by `StyleSheet`) on mobile only. The web app still hardcodes CSS literals and does NOT follow `Design.md`; sharing tokens across platforms is an open follow-up (PROGRESS.md #9).
 
 ## 1. Product goal
 

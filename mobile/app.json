@@ -6,6 +6,8 @@
     "orientation": "portrait",
     "userInterfaceStyle": "light",
     "newArchEnabled": true,
+    "icon": "./assets/icon-solid.png",
+    "backgroundColor": "#0a0a0a",
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.clippress.mobile",
@@ -14,13 +16,27 @@
           "NSAllowsLocalNetworking": true
         },
         "NSLocalNetworkUsageDescription": "Connect to your compression server on the local network."
-      }
+      },
+      "icon": "./assets/icon-solid.png"
     },
     "android": {
-      "package": "com.clippress.mobile"
+      "package": "com.clippress.mobile",
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/icon-adaptive.png",
+        "backgroundColor": "#0a0a0a"
+      }
     },
     "plugins": [
-      "expo-video"
+      "expo-video",
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/splash-icon.png",
+          "imageWidth": 180,
+          "resizeMode": "contain",
+          "backgroundColor": "#0a0a0a"
+        }
+      ]
     ]
   }
 }
