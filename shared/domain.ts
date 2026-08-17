@@ -1,6 +1,9 @@
 export type Codec = 'h264' | 'h265'
 export type Crf = 25 | 28
 
+// The user-visible codec + quality selection, shared by web and mobile screens.
+export type Profile = { codec: Codec; crf: Crf }
+
 export type CompressionProfile = {
   id: string
   label: string

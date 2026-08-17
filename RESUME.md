@@ -207,6 +207,21 @@ Likely causes, in order: (1) stale/cached tab → hard reload `Cmd+Shift+R`; (2)
 - **Conversion journey stepper**: server conversions are 3 phases — **Upload → Compress → Download**. New `downloading` phase added to `CompressOptions.onPhase` and `VideoAsset.phase`; the download now streams with real progress via `FileSystem.createDownloadResumable` (was a silent `downloadAsync`). Each card shows a `ConversionJourney` stepper: numbered nodes light up with a teal checkmark as each phase completes (connector lines + labels follow the node state), plus a phase label ("Uploading to the server… / Compressing on the server… / Downloading result…") and the progress bar. When the download hits 100% the card flips to Completed (badge + Saved N%). NOTE: an on-device engine (PROGRESS #7) would only light the Compress step — the journey structure already supports that.
 - **Verification**: `npx tsc --noEmit` clean, `npx expo export --platform ios` bundles. (Expo Go on device, not the standalone build, was used for the storage checks.)
 
+## Session: component-based refactor (PROGRESS #9, DONE)
+
+- **Shared**: `shared/domain.ts` gained `Profile = { codec, crf }`; both apps' `VideoAsset`/state type against it.
+- **Mobile** (`mobile/App.tsx` now a 9-line SafeAreaProvider shell → `mobile/src/screens/HomeScreen.tsx`):
+  - `mobile/src/types.ts` — `JobStatus`, `JourneyPhase`, `VideoAsset`, `STATUS_LABEL`, `STATUS_STYLE`.
+  - `mobile/src/utils/status.ts` — `healthStatus()` (ServerHealthy → label/color/dot), `ratioText()`.
+  - `mobile/src/components/` w/ colocated styles: BrandHeader, StatusBadge, CardPreview, ConversionJourney, LinkAction, ProfileSwitches, ServerConfigCard, ActionButtons, EmptyState, VideoCard, FooterNote.
+  - `mobile/src/hooks/` — `useServerConnection` (resolve/apply URL + health ping), `useStorage` (log/stats/clear), `useAssets` (global profile, asset list, import/convert/share/profile toggle, AppState foreground resume via serverUrlRef/pingServerRef/runConvertRef).
+- **Web** (`src/App.tsx` now a ~98-line composer):
+  - `src/types.ts` — `JobStatus`, browser-FS handle types, `VideoAsset`, `PreviewSelection`, `EngineState`.
+  - `src/utils/media.ts` — `MAX_ENCODE_PIXELS`, `extensionFrom`, `formatDuration`, `isCompleteMp4`, `pickFolder` (returns null → caller falls back to `<input webkitdirectory>`). `src/utils/inspect.ts` — metadata probe.
+  - `src/components/` — TopBar, Hero, ControlBar, Toolbar, Notice, EmptyState, VideoCard, FooterNote, PreviewModal. They share the single global `src/App.css` (selectors overlap too much to split safely; kept as-is on purpose).
+  - `src/hooks/` — `useWakeLock` (grab/release + unmount release), `usePersistence` (IndexedDB hydration + debounced save, hydrating-guarded), `useImport` (addFiles/onFileChange/chooseFolder + metadata probe), `useEncoder` (FFmpeg load + progress, runConversion, saveOutput incl. FS-Access beside-original, startBatch/startOne/cancel, queue pump effect, unmount engine terminate).
+- All UI files ≤ ~160 lines; heaviest overall is `mobile/src/compressionService.ts` (279, a pure service module). Web `npm run build` ✓; mobile `tsc --noEmit` ✓ + `expo export --platform ios` ✓. No behavior changes — same flow, same classes/styles, same server journey.
+
 ## Open Follow-ups (pruned; completed items moved above)
 
 - **4K strategy decision** — web blocks anything above 2,592,000 px / ~1080×2400 with "Use a smaller clip or the native desktop app". Verified working up to 1080×2288 in WASM; true 4K still OOMs. If real 4K is wanted later: (a) automatic downscale in-app (`-vf scale=...` + output-resolution option), (b) chunked encode, or (c) ship with the guard as the honest limit (current behavior). Note the mobile app converts any size via the server.
@@ -216,4 +231,3 @@ Likely causes, in order: (1) stale/cached tab → hard reload `Cmd+Shift+R`; (2)
 - If the compression service ever goes public: auth, per-request limits, job persistence (currently in-memory, single-queue, unauth — fine for LAN).
 - Consider npm/EAS for over-the-air installs (EAS Build with a paid dev account) instead of local Xcode signing.
 - Test fixtures: `public/repro.MP4`, `public/sample1080.MP4`, `public/portrait2288.MP4`. They're regenerable and now gitignored by `*.MP4`.
-- **Component-based folder structure + small reusable components** (PROGRESS #9): `mobile/App.tsx` (~490 lines) and web `src/App.tsx`/`App.css` are big flat files. Split into `components/` (+ `screens/`, `hooks/`, `utils/`), colocate styles, move platform-neutral logic into `shared/`, target no file > ~200 lines so the on-device engine (#7) and future screens don't need to touch the giant App file.
