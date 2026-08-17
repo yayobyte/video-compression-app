@@ -95,7 +95,10 @@ export const clearStoredFiles = async (): Promise<StorageStats> => {
       // nothing readable — nothing to clear
     }
   }
-  await Promise.all([clearDir(OUTPUTS_DIR), clearDir(cache, CACHE_ORPHAN)])
+  // Also remove the DocumentPicker/ folder (copies of imported sources) and
+  // anything else the app put in cache that isn't an Expo-managed asset.
+  const cacheExtra = (name: string) => name === 'DocumentPicker'
+  await Promise.all([clearDir(OUTPUTS_DIR), clearDir(cache, CACHE_ORPHAN), clearDir(cache, cacheExtra)])
   return getStorageStats()
 }
 
