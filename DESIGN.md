@@ -621,14 +621,14 @@ The system has **no traditional drop-shadow language**. Surfaces register depth 
 
 ## Mobile App Token Implementation
 
-The mobile app (`mobile/src/theme.ts`) consumes the token system above. It is the single source of color, spacing, radius, and typography for `mobile/App.tsx` — components must never hardcode hex values or raw pixel numbers.
+The mobile app consumes the token system in two layers: **`shared/tokens.ts` is the single source of truth for color, spacing, and radius** (the shared REVOLUT-derived palette, 4px grid, compact radius set). `mobile/src/theme.ts` re-exports those and adds the platform-specific parts — `typography` (system font ramp including a line-height-free `input` variant so iOS TextInputs center correctly), `surfaces`, `buttons`, `gaps` — which it builds on top of `shared/tokens`. All of `mobile/src/components/*` and `mobile/src/screens/HomeScreen.tsx` import from `./theme`; components must never hardcode hex values or raw pixel numbers.
 
 Implemented values (some diverge from the canonical set by design):
 
-- **colors** — `canvas-dark/canvas-light`, `background #121316`, `surface #16181a`, `card #292b30`, `elevated #35373d`, `ink #191c1f`, `text #ffffff`, `text-muted #9b9da7`, `text-dim #5b5e67`, `primary #494fdf`, `primary-bright #4f55f1`, `primary-soft #6f74ff`, `accent #a8ecd9`, `teal #00a87e`, `online #3fbf8f`, `danger #ffabb2`, `danger-deep #e23b4a`, `danger-bg #6e2b30`, `pending #ffd38d`, hairlines.
+- **colors** (`shared/tokens.ts`) — `canvasDark #000`/`canvasLight #fff`, `background #121316`, `surface #16181a`, `surfaceScrim #101114`, `card #292b30`, `elevated #35373d`, `ink #191c1f`, `text #ffffff`, `textMuted #9b9da7`, `textDim #5b5e67`, `primary #494fdf`, `primaryBright #4f55f1`, `primarySoft #6f74ff`, `accent #a8ecd9`, `teal #00a87e`, `online #3fbf8f`, `danger #ffabb2`, `dangerDeep #e23b4a`, `dangerBg #6e2b30`, `pending #ffd38d` + `pendingBg`, `hairline`/`hairlineStrong`.
 - **spacing** — standard 4px grid: `xxs 4 · sm 8 · md 12 · lg 16 · xl 20 · xxl 24 · xxxl 32 · section 40 · block 48`. (Canonical `md 14`/`xl 24` were rounded to the 4px grid for consistency.)
 - **radius** — compact set: `none 0 · sm 8 · md 12 · lg 16 · xl 20 · full 9999`. (Canonical `lg 20`/`xl 28` were pulled in to keep cards + previews tight on small screens.)
-- **typography** — mobile uses the system font (closest to Inter) with a fixed ramp: `brand 18/800 · title 30/800 · heading 16/700 · name 15/700 · body 14 · body-emphasis 14/700 · label 11/700 ls2 · caption 12 · caption-emphasis 12/700 · button 14/800 · link 14/700 · micro 10/700`.
+- **typography** — mobile uses the system font (closest to Inter) with a fixed ramp: `brand 18/800 · title 30/800 · heading 16/700 · name 14/200 · body 14 · body-emphasis 14/700 · label 11/700 ls2 · caption 12 · caption-emphasis 12/700 · button 14/800 · link 14/700 · micro 10/700` (plus `input 14` with no lineHeight).
 - **reusable classes** — `surfaces` (`card`, `pill`, `field`, `divider`), `buttons` (`primary`, `secondary`, `link`, `pill`), and `gaps`. Layout code composes these instead of literals.
 - Standard `{component.button-primary}` is 48px tall; the mobile primary/secondary buttons are ~46–48px and the compact pills ~28–34px per the touch-target guideline.
 
