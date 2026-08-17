@@ -1,66 +1,15 @@
+import { colors, radius, spacing } from '../../shared/tokens'
 import type { TextStyle, ViewStyle } from 'react-native'
 
+// Re-export the shared token objects so existing imports keep working and
+// mobile/App.tsx still gets them from `./src/theme`.
+export { colors, radius, spacing }
+
 // Design tokens for the Clippress mobile app.
-// Source of truth: DESIGN.md (Revolut-inspired). Mobile stands on a 4px spacing grid
-// with a compact radius set and a small typography ramp so styles are always reused.
-
-// ---- Color system ----------------------------------------------------------
-// Brand: cobalt-violet (#494fdf) on near-black surfaces, teal accent for
-// confirmation, muted slate for secondary text.
-export const colors = {
-  // canvas
-  canvasDark: '#000000',
-  canvasLight: '#ffffff',
-  background: '#121316',
-  surface: '#16181a',
-  surfaceScrim: '#101114',
-  card: '#292b30',
-  elevated: '#35373d',
-  // ink & text
-  ink: '#191c1f',
-  text: '#ffffff',
-  textMuted: '#9b9da7',
-  textDim: '#5b5e67',
-  // brand / accent
-  primary: '#494fdf',
-  primaryBright: '#4f55f1',
-  primarySoft: '#6f74ff',
-  accent: '#a8ecd9',
-  teal: '#00a87e',
-  online: '#3fbf8f',
-  // status
-  danger: '#ffabb2',
-  dangerDeep: '#e23b4a',
-  dangerBg: '#6e2b30',
-  pending: '#ffd38d',
-  pendingBg: 'rgba(236,126,0,0.16)',
-  // borders
-  hairline: 'rgba(255,255,255,0.12)',
-  hairlineStrong: 'rgba(255,255,255,0.18)',
-} as const
-
-// ---- Spacing system (4px grid) ---------------------------------------------
-export const spacing = {
-  xxs: 4,
-  sm: 8,
-  md: 12,
-  lg: 16,
-  xl: 20,
-  xxl: 24,
-  xxxl: 32,
-  section: 40,
-  block: 48,
-} as const
-
-// ---- Radius -----------------------------------------------------------------
-export const radius = {
-  none: 0,
-  sm: 8,
-  md: 12,
-  lg: 16,
-  xl: 20,
-  full: 9999,
-} as const
+// Source of truth: shared/tokens.ts (extracted from DESIGN.md, Revolut-inspired).
+// Mobile stands on the shared 4px spacing grid, radius set, and color palette,
+// adding platform-specific typography (system font, line-height-free inputs) and
+// reusable composite styles below.
 
 // ---- Typography --------------------------------------------------------------
 // Sizes are fixed steps that components reuse; weights and letterSpacing are

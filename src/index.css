@@ -1,3 +1,38 @@
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
 :root { font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; color: #fff; background: #08090b; font-synthesis: none; text-rendering: optimizeLegibility; -webkit-font-smoothing: antialiased; }
 html { background: #08090b; } body { min-width: 320px; margin: 0; }
+
+/* Web-only colors: no mobile counterpart, so they stay out of shared/tokens.ts.
+   Shared palette/spacing/radius are injected from shared/tokens.ts by main.tsx. */
+:root {
+  --t-shell: #08090b;
+  --t-eyebrow: #9da0ad;
+  --t-hero-accent: #7c82ff;
+  --t-folder-bg: #262938;
+  --t-folder-fg: #8e93ff;
+  --t-segmented-bg: #26282c;
+  --t-segmented-fg: #a7aab3;
+  --t-inverse: #f8f8fa;
+  --t-empty-bg: #1b1d29;
+  --t-empty-fg: #9398ff;
+  --t-empty-dim: #686b76;
+  --t-card-bg: #15171a;
+  --t-thumb-a: #313647;
+  --t-thumb-b: #0f1015;
+  --t-status-fg: #aeb1ba;
+  --t-status-bg: #25272c;
+  --t-converting: #c5c8ff;
+  --t-metadata: #8f929b;
+  --t-progress-fg: #b6b8bf;
+  --t-notice: #b6f5e3;
+  --t-notice-strong: #63dfba;
+  --t-loading: #ec7e00;
+  --t-link-fg: #b8bbff;
+  --t-link-danger: #ff939e;
+  --t-error: #ffadb5;
+  --t-footer: #777a84;
+  --t-modal-bg: #17191d;
+  --t-close-bg: #2b2d32;
+  --t-modal-fg: #a3a6af;
+  --t-modal-dim: #757983;
+}
