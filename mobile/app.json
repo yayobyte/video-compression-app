@@ -15,7 +15,9 @@
         "NSAppTransportSecurity": {
           "NSAllowsLocalNetworking": true
         },
-        "NSLocalNetworkUsageDescription": "Connect to your compression server on the local network."
+        "NSLocalNetworkUsageDescription": "Connect to your compression server on the local network.",
+        "UIFileSharingEnabled": true,
+        "LSSupportsOpeningDocumentsInPlace": true
       },
       "icon": "./assets/icon-solid.png"
     },

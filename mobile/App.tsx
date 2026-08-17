@@ -2,6 +2,7 @@ import { StatusBar } from 'expo-status-bar'
 import * as DocumentPicker from 'expo-document-picker'
 import * as Sharing from 'expo-sharing'
 import { useVideoPlayer, VideoView } from 'expo-video'
+import { Ionicons } from '@expo/vector-icons'
 import { useEffect, useRef, useState } from 'react'
 import { ActivityIndicator, AppState, Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View } from 'react-native'
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context'
@@ -52,7 +53,7 @@ const ratioText = (asset: VideoAsset) => {
   if (!asset.outputSize || asset.outputSize <= 0 || asset.size <= 0) return ''
   const times = asset.size / asset.outputSize
   if (times < 1) return 'larger than the original'
-  return `×${times.toFixed(1)} smaller · saved ${Math.round((1 - asset.outputSize / asset.size) * 100)}%`
+  return `Saved ${Math.round((1 - asset.outputSize / asset.size) * 100)}%`
 }
 
 function CardPreview({ uri }: { uri: string }) {
@@ -61,6 +62,15 @@ function CardPreview({ uri }: { uri: string }) {
     player.muted = false
   })
   return <VideoView player={player} style={styles.preview} contentFit="contain" nativeControls />
+}
+
+function LinkAction({ icon, label, onPress }: { icon: keyof typeof Ionicons.glyphMap; label: string; onPress: () => void }) {
+  return (
+    <Pressable onPress={onPress} style={styles.linkButton} hitSlop={8}>
+      <Ionicons name={icon} size={15} color={colors.accent} />
+      <Text style={styles.linkText}>{label}</Text>
+    </Pressable>
+  )
 }
 
 export default function App() {
@@ -260,6 +270,7 @@ export default function App() {
                   style={styles.serverInput}
                 />
                 <Pressable style={[styles.serverApply, savingServer && styles.serverApplyDisabled]} disabled={savingServer} onPress={applyServerUrl}>
+                  <Ionicons name="save-outline" size={15} color={colors.text} />
                   <Text style={styles.serverApplyText}>Apply</Text>
                 </Pressable>
               </View>
@@ -267,6 +278,7 @@ export default function App() {
                 <View style={[styles.serverStatusDot, { backgroundColor: healthStatus(serverHealth).dot }]} />
                 <Text style={[styles.serverStatusText, { color: healthStatus(serverHealth).color }]}>{healthStatus(serverHealth).label}</Text>
                 <Pressable style={styles.checkButton} onPress={() => void pingServer(serverUrl)}>
+                  <Ionicons name="pulse" size={14} color={colors.background} />
                   <Text style={styles.checkButtonText}>Check</Text>
                 </Pressable>
               </View>
@@ -276,8 +288,8 @@ export default function App() {
           </View>
 
           <View style={styles.actions}>
-            <Pressable style={[styles.button, styles.buttonSecondary]} onPress={() => void importVideos()}><Text style={styles.buttonText}>Import videos</Text></Pressable>
-            <Pressable style={[styles.button, styles.buttonPrimary]} disabled={!canStart || busy} onPress={convertAll}><Text style={styles.buttonPrimaryText}>↻ Convert</Text></Pressable>
+            <Pressable style={[styles.button, styles.buttonSecondary]} onPress={() => void importVideos()}><Ionicons name="folder-open-outline" size={16} color={colors.text} /><Text style={styles.buttonText}>Import videos</Text></Pressable>
+            <Pressable style={[styles.button, styles.buttonPrimary]} disabled={!canStart || busy} onPress={convertAll}><Ionicons name="flash-outline" size={16} color={colors.text} /><Text style={styles.buttonPrimaryText}>Convert</Text></Pressable>
           </View>
 
           {!assets.length ? (
@@ -291,30 +303,30 @@ export default function App() {
                 <Text style={styles.cardName} numberOfLines={1}>{asset.name}</Text>
                 <View style={[styles.statusBadge, styles[STATUS_STYLE[asset.status]]]}>
                   {asset.status === 'converting' && <ActivityIndicator size="small" color={colors.text} />}
-                  <Text style={styles.statusText}>{STATUS_LABEL[asset.status]}</Text>
+                  <Text style={[styles.statusText, asset.status === 'completed' && styles.statusText_completed]}>{STATUS_LABEL[asset.status]}</Text>
                 </View>
               </View>
-              <Text style={styles.cardMeta}>{formatBytes(asset.size)}</Text>
+              <Text style={styles.cardMeta}>{formatBytes(asset.size)} → {asset.outputSize ? formatBytes(asset.outputSize) : 'calculating...'}</Text>
               <View style={styles.cardProfileRow}>
-                <View style={styles.miniSwitch}>
+                <View style={styles.cardProfileColumn}>
+                  <Text style={styles.cardProfileLabel}>Codec</Text>
                   <Switch
                     value={asset.profile.codec === 'h265'}
                     onValueChange={(enabled) => setProfileOn(asset.id, asset.name, enabled ? 'h265' : 'h264', asset.profile.crf)}
                     trackColor={{ true: colors.primarySoft, false: colors.elevated }}
                     thumbColor={colors.text}
-                    style={styles.miniSwitchControl}
                   />
-                  <Text style={styles.miniSwitchLabel}>{asset.profile.codec === 'h265' ? 'H.265' : 'H.264'}</Text>
+                  <Text style={styles.cardProfileHint}>{asset.profile.codec === 'h265' ? 'H.265/HEVC: much smaller files, not on older devices.' : 'H.264: plays everywhere, but larger files.'}</Text>
                 </View>
-                <View style={styles.miniSwitch}>
+                <View style={styles.cardProfileColumn}>
+                  <Text style={styles.cardProfileLabel}>Compression</Text>
                   <Switch
                     value={asset.profile.crf === 25}
                     onValueChange={(highQuality) => setProfileOn(asset.id, asset.name, asset.profile.codec, highQuality ? 25 : 28)}
                     trackColor={{ true: colors.primarySoft, false: colors.elevated }}
                     thumbColor={colors.text}
-                    style={styles.miniSwitchControl}
                   />
-                  <Text style={styles.miniSwitchLabel}>CRF {asset.profile.crf}</Text>
+                  <Text style={styles.cardProfileHint}>CRF {asset.profile.crf} · {asset.profile.crf === 25 ? 'Higher quality.' : 'Smaller file.'}</Text>
                 </View>
               </View>
               {(asset.status === 'converting') && (
@@ -325,21 +337,20 @@ export default function App() {
               )}
               {asset.status === 'completed' && (
                 <View style={styles.completedRow}>
-                  <View>
-                    <Text style={styles.completedText}>✓ {formatBytes(asset.outputSize)} compressed</Text>
-                    <Text style={styles.ratioText}>{formatBytes(asset.size)} → {formatBytes(asset.outputSize ?? 0)} · {ratioText(asset)}</Text>
+                  <View style={styles.completedInfo}>
+                    <Text style={styles.completedText}>{ratioText(asset)}</Text>
                   </View>
-                  <Pressable onPress={() => void shareOutput(asset)} style={styles.linkButton}><Text style={styles.linkText}>Share</Text></Pressable>
+                  <LinkAction icon="share-outline" label="Share" onPress={() => void shareOutput(asset)} />
                 </View>
               )}
               {asset.status === 'failed' && asset.error ? <Text style={styles.errorText}>{asset.error}</Text> : null}
-              {preview === asset.id && <CardPreview uri={asset.status === 'completed' && asset.outputUri ? asset.outputUri : asset.uri} />}
               <View style={styles.cardActions}>
-                <Pressable onPress={() => setPreview((current) => current === asset.id ? null : asset.id)} style={styles.linkButton}><Text style={styles.linkText}>{preview === asset.id ? 'Close preview' : 'Preview'}</Text></Pressable>
+                <LinkAction icon={preview === asset.id ? 'close-outline' : 'play-outline'} label={preview === asset.id ? 'Close preview' : 'Preview'} onPress={() => setPreview((current) => current === asset.id ? null : asset.id)} />
                 {asset.status !== 'converting'
-                  ? <Pressable onPress={() => void runConvert(asset)} style={styles.linkButton}><Text style={styles.linkText}>{asset.status === 'failed' ? 'Try again' : asset.status === 'completed' ? 'Re-convert' : 'Convert'}</Text></Pressable>
+                  ? <LinkAction icon={asset.status === 'failed' ? 'refresh' : asset.status === 'completed' ? 'refresh-outline' : 'play'} label={asset.status === 'failed' ? 'Try again' : asset.status === 'completed' ? 'Re-convert' : 'Convert'} onPress={() => void runConvert(asset)} />
                   : <ActivityIndicator size="small" color={colors.primarySoft} />}
               </View>
+              {preview === asset.id && <CardPreview uri={asset.status === 'completed' && asset.outputUri ? asset.outputUri : asset.uri} />}
             </View>
           ))}
 
@@ -370,17 +381,17 @@ const styles = StyleSheet.create({
   serverRow: { gap: gaps.sm, marginTop: spacing.xxs },
   serverInputRow: { flexDirection: 'row', gap: gaps.sm },
   serverInput: { ...surfaces.field, flex: 1, paddingVertical: spacing.md, color: colors.text, ...typography.input, textAlignVertical: 'center' },
-  serverApply: { ...buttons.primary, paddingHorizontal: spacing.lg, justifyContent: 'center' },
+  serverApply: { ...buttons.primary, paddingHorizontal: spacing.lg, justifyContent: 'center', flexDirection: 'row', alignItems: 'center', gap: gaps.sm },
   serverApplyDisabled: { opacity: 0.6 },
   serverApplyText: { ...typography.button, color: colors.text },
   serverStatusRow: { flexDirection: 'row', alignItems: 'center', gap: gaps.sm, marginTop: spacing.sm },
   serverStatusDot: { width: spacing.sm, height: spacing.sm, borderRadius: radius.sm },
   serverStatusText: { ...typography.bodyEmphasis, color: colors.text },
   serverStatusError: { ...typography.caption, color: colors.textMuted, flexShrink: 1, marginTop: spacing.xxs },
-  checkButton: { ...buttons.pill, backgroundColor: colors.accent },
+  checkButton: { ...buttons.pill, backgroundColor: colors.accent, flexDirection: 'row', alignItems: 'center', gap: gaps.xxs },
   checkButtonText: { ...typography.button, color: colors.background, fontSize: 13, lineHeight: 18 },
   actions: { flexDirection: 'row', gap: gaps.md },
-  button: { borderRadius: radius.md, paddingVertical: spacing.lg, paddingHorizontal: spacing.xl, alignItems: 'center' },
+  button: { borderRadius: radius.md, paddingVertical: spacing.lg, paddingHorizontal: spacing.xl, alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: gaps.sm },
   buttonSecondary: { ...buttons.secondary, flex: 1 },
   buttonPrimary: { ...buttons.primary, flex: 1 },
   buttonText: { ...typography.button, color: colors.text },
@@ -398,21 +409,23 @@ const styles = StyleSheet.create({
   status_failed: { backgroundColor: colors.dangerBg },
   status_cancelled: { backgroundColor: colors.elevated },
   statusText: { ...typography.micro, color: colors.text },
+  statusText_completed: { color: colors.background },
   cardMeta: { ...typography.body, color: colors.textMuted },
-  cardProfileRow: { flexDirection: 'row', gap: gaps.lg },
-  miniSwitch: { flexDirection: 'row', alignItems: 'center', gap: gaps.sm },
-  miniSwitchControl: { transform: [{ scaleX: 0.75 }, { scaleY: 0.75 }] },
-  miniSwitchLabel: { ...typography.captionEmphasis, color: colors.text },
+  cardProfileRow: { flexDirection: 'row', gap: gaps.md },
+  cardProfileColumn: { flex: 1, gap: gaps.xxs, alignSelf: 'flex-start' },
+  cardProfileLabel: { ...typography.micro, color: colors.textMuted },
+  cardProfileHint: { ...typography.micro, color: colors.textDim, lineHeight: 13 },
   progressLabel: { ...typography.caption, color: colors.textMuted, marginBottom: spacing.xxs },
   progressTrack: { height: spacing.sm, borderRadius: radius.sm, backgroundColor: colors.elevated, overflow: 'hidden' },
   progressFill: { height: spacing.sm, borderRadius: radius.sm, backgroundColor: colors.primarySoft },
   completedRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  completedInfo: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: gaps.sm, flexWrap: 'wrap' },
   completedText: { ...typography.captionEmphasis, color: colors.accent },
   ratioText: { ...typography.caption, color: colors.textMuted, marginTop: spacing.xxs },
   errorText: { ...typography.caption, color: colors.danger, lineHeight: 17 },
   preview: { width: '100%', height: 220, borderRadius: radius.md, backgroundColor: colors.elevated },
   cardActions: { flexDirection: 'row', justifyContent: 'space-between', minHeight: 20 },
-  linkButton: { ...buttons.link },
+  linkButton: { ...buttons.link, flexDirection: 'row', alignItems: 'center', gap: gaps.sm },
   linkText: { ...typography.link, color: colors.accent },
   footer: { ...typography.caption, color: colors.textMuted, textAlign: 'center', paddingTop: spacing.sm },
 })
