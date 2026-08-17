@@ -148,7 +148,7 @@ export type CompressOptions = {
   codec: Codec
   crf: Crf
   onProgress: (percent: number) => void
-  onPhase: (phase: 'uploading' | 'compressing') => void
+  onPhase: (phase: 'uploading' | 'compressing' | 'downloading') => void
 }
 
 export type CompressResult = {
@@ -246,8 +246,28 @@ export const compressVideo = async (options: CompressOptions): Promise<CompressR
     }
     if (body.status === 'completed') {
       const dest = `${await ensureOutputsDir()}${outputName}`
-      const download = await FileSystem.downloadAsync(`${base}/api/jobs/${job.id}/output`, dest)
-      if (download.status !== 200) throw new Error(`Download failed (${download.status}).`)
+      options.onPhase('downloading')
+      options.onProgress(0)
+      // Download the output with real progress so the journey shows all three
+      // steps (upload → compress → download) completing.
+      const status = await new Promise<number>((resolve, reject) => {
+        const task = FileSystem.createDownloadResumable(
+          `${base}/api/jobs/${job.id}/output`,
+          dest,
+          {},
+          (event) => {
+            const { totalBytesWritten, totalBytesExpectedToWrite } = event
+            if (totalBytesExpectedToWrite > 0) {
+              options.onProgress(Math.max(0, Math.min(100, Math.round((totalBytesWritten / totalBytesExpectedToWrite) * 100))))
+            }
+          },
+        )
+        void task.downloadAsync().then(
+          (result) => resolve(result?.status ?? 0),
+          (error) => reject(error instanceof Error ? error : new Error(String(error))),
+        )
+      })
+      if (status !== 200) throw new Error(`Download failed (${status}).`)
       const info = await FileSystem.getInfoAsync(dest)
       const outputSize = info.exists && !info.isDirectory ? info.size : 0
       void fetch(`${base}/api/jobs/${job.id}`, { method: 'DELETE' }).catch(() => undefined)
