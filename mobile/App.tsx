@@ -223,8 +223,7 @@ export default function App() {
         <StatusBar style="light" />
         <ScrollView contentContainerStyle={styles.scroll}>
           <View style={styles.header}>
-            <Text style={styles.brand}>◒ clippress</Text>
-            <View style={styles.pill}><Text style={styles.pillText}>{assets.length ? `${assets.length} videos loaded` : 'Local-only processing'}</Text></View>
+            <View style={styles.brandRow}><Ionicons name="film-outline" size={18} color={colors.text} /><Text style={styles.brand}>clippress</Text></View>
           </View>
 
           <Text style={styles.title}>Make your video library <Text style={styles.titleAccent}>lighter.</Text></Text>
@@ -306,7 +305,8 @@ export default function App() {
                   <Text style={[styles.statusText, asset.status === 'completed' && styles.statusText_completed]}>{STATUS_LABEL[asset.status]}</Text>
                 </View>
               </View>
-              <Text style={styles.cardMeta}>{formatBytes(asset.size)} → {asset.outputSize ? formatBytes(asset.outputSize) : 'calculating...'}</Text>
+              <Text style={styles.cardMeta}>{formatBytes(asset.size)}{asset.outputSize ? ` → ${formatBytes(asset.outputSize)}` : ''}</Text>
+              {asset.status === 'completed' && asset.outputSize ? <Text style={styles.savedText}>{ratioText(asset)}</Text> : null}
               <View style={styles.cardProfileRow}>
                 <View style={styles.cardProfileColumn}>
                   <Text style={styles.cardProfileLabel}>Codec</Text>
@@ -335,20 +335,13 @@ export default function App() {
                   <View style={styles.progressTrack}><View style={[styles.progressFill, { width: `${Math.max(asset.progress, 2)}%` }]} /></View>
                 </View>
               )}
-              {asset.status === 'completed' && (
-                <View style={styles.completedRow}>
-                  <View style={styles.completedInfo}>
-                    <Text style={styles.completedText}>{ratioText(asset)}</Text>
-                  </View>
-                  <LinkAction icon="share-outline" label="Share" onPress={() => void shareOutput(asset)} />
-                </View>
-              )}
               {asset.status === 'failed' && asset.error ? <Text style={styles.errorText}>{asset.error}</Text> : null}
               <View style={styles.cardActions}>
                 <LinkAction icon={preview === asset.id ? 'close-outline' : 'play-outline'} label={preview === asset.id ? 'Close preview' : 'Preview'} onPress={() => setPreview((current) => current === asset.id ? null : asset.id)} />
                 {asset.status !== 'converting'
                   ? <LinkAction icon={asset.status === 'failed' ? 'refresh' : asset.status === 'completed' ? 'refresh-outline' : 'play'} label={asset.status === 'failed' ? 'Try again' : asset.status === 'completed' ? 'Re-convert' : 'Convert'} onPress={() => void runConvert(asset)} />
                   : <ActivityIndicator size="small" color={colors.primarySoft} />}
+                {asset.status === 'completed' && <LinkAction icon="share-outline" label="Share" onPress={() => void shareOutput(asset)} />}
               </View>
               {preview === asset.id && <CardPreview uri={asset.status === 'completed' && asset.outputUri ? asset.outputUri : asset.uri} />}
             </View>
@@ -365,6 +358,7 @@ const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.background },
   scroll: { padding: spacing.xl, gap: gaps.xl },
   header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  brandRow: { flexDirection: 'row', alignItems: 'center', gap: gaps.sm },
   brand: { ...typography.brand, color: colors.text },
   pill: { ...surfaces.pill },
   pillText: { ...typography.caption, color: colors.textMuted },
@@ -410,7 +404,8 @@ const styles = StyleSheet.create({
   status_cancelled: { backgroundColor: colors.elevated },
   statusText: { ...typography.micro, color: colors.text },
   statusText_completed: { color: colors.background },
-  cardMeta: { ...typography.body, color: colors.textMuted },
+  cardMeta: { ...typography.heading, color: colors.textMuted },
+  savedText: { ...typography.captionEmphasis, color: colors.accent, marginBottom: spacing.xxs },
   cardProfileRow: { flexDirection: 'row', gap: gaps.md },
   cardProfileColumn: { flex: 1, gap: gaps.xxs, alignSelf: 'flex-start' },
   cardProfileLabel: { ...typography.micro, color: colors.textMuted },
@@ -418,10 +413,6 @@ const styles = StyleSheet.create({
   progressLabel: { ...typography.caption, color: colors.textMuted, marginBottom: spacing.xxs },
   progressTrack: { height: spacing.sm, borderRadius: radius.sm, backgroundColor: colors.elevated, overflow: 'hidden' },
   progressFill: { height: spacing.sm, borderRadius: radius.sm, backgroundColor: colors.primarySoft },
-  completedRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  completedInfo: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: gaps.sm, flexWrap: 'wrap' },
-  completedText: { ...typography.captionEmphasis, color: colors.accent },
-  ratioText: { ...typography.caption, color: colors.textMuted, marginTop: spacing.xxs },
   errorText: { ...typography.caption, color: colors.danger, lineHeight: 17 },
   preview: { width: '100%', height: 220, borderRadius: radius.md, backgroundColor: colors.elevated },
   cardActions: { flexDirection: 'row', justifyContent: 'space-between', minHeight: 20 },

@@ -12,6 +12,7 @@ Local-first video compression across the web and iPhone, powered by FFmpeg.
 - [`DESIGN.md`](./DESIGN.md) — Revolut-inspired design system, tokens, and UI direction.
 - [`PROGRESS.md`](./PROGRESS.md) — milestone status, current limitations, and next work.
 - [`RESUME.md`](./RESUME.md) — detailed session notes: every bug fixed (H.265 hangs, 4K OOM, iOS 1.5 GB crashes, "stuck at 1%") and how to resume work.
+- [`server/README.md`](./server/README.md) — how the compression service works: API, job lifecycle, storage, and troubleshooting.
 
 ## Requirements
 

@@ -85,10 +85,17 @@ const uploadVideo = (
       url,
       fileUri,
       {
-        uploadType: FileSystem.FileSystemUploadType.MULTIPART,
-        fieldName: 'file',
+        uploadType: FileSystem.FileSystemUploadType.BINARY_CONTENT,
         mimeType: 'video/mp4',
-        parameters: { codec, crf: String(crf), filename: fileName },
+        // The iOS multipart path loads the whole file into memory before
+        // sending (Data(contentsOf:)), which kills 1 GB+ uploads. Binary
+        // content streams straight from the file — safe for any size.
+        headers: {
+          'Content-Type': 'video/mp4',
+          'X-Codec': codec,
+          'X-Crf': String(crf),
+          'X-Filename': encodeURIComponent(fileName),
+        },
       },
       (event) => {
         const { totalBytesSent, totalBytesExpectedToSend } = event

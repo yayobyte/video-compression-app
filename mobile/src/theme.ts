@@ -73,7 +73,7 @@ export const typography: Record<string, TextStyle> = {
   brand: { ...typeBase, fontSize: 18, fontWeight: '800', lineHeight: 22 },
   title: { ...typeBase, fontSize: 30, fontWeight: '800', lineHeight: 36, letterSpacing: -0.4 },
   heading: { ...typeBase, fontSize: 16, fontWeight: '700', lineHeight: 22 },
-  name: { ...typeBase, fontSize: 15, fontWeight: '700', lineHeight: 20 },
+  name: { ...typeBase, fontSize: 14, fontWeight: '200', lineHeight: 20 },
   body: { ...typeBase, fontSize: 14, fontWeight: '400', lineHeight: 21 },
   bodyEmphasis: { ...typeBase, fontSize: 14, fontWeight: '700', lineHeight: 21 },
   label: { ...typeBase, fontSize: 11, fontWeight: '700', letterSpacing: 2, lineHeight: 16 },

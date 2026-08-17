@@ -1,14 +1,14 @@
 import express from 'express'
-import multer from 'multer'
 import { spawn } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
 import { mkdir, rm, stat } from 'node:fs/promises'
-import { createReadStream, existsSync } from 'node:fs'
+import { createReadStream, createWriteStream, existsSync } from 'node:fs'
 import { dirname, join, basename } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const HOST = process.env.HOST ?? '0.0.0.0'
 const PORT = Number(process.env.PORT ?? 8787)
+const MAX_UPLOAD_BYTES = 16 * 1024 * 1024 * 1024
 const WORK_DIR = join(dirname(fileURLToPath(import.meta.url)), 'tmp')
 const INPUTS_DIR = join(WORK_DIR, 'in')
 const OUTPUTS_DIR = join(WORK_DIR, 'out')
@@ -18,12 +18,35 @@ await mkdir(OUTPUTS_DIR, { recursive: true })
 const ts = () => new Date().toLocaleTimeString('en-GB', { hour12: false })
 const log = (...args) => console.log(`[${ts()}]`, ...args)
 
+// Clean up leftovers from a previous run (jobs are in-memory, so anything on
+// disk without a live job is orphaned — e.g. after a crash or restart).
+for (const dir of [INPUTS_DIR, OUTPUTS_DIR]) {
+  const { readdir } = await import('node:fs/promises')
+  const names = await readdir(dir).catch(() => [])
+  for (const name of names) {
+    await rm(join(dir, name), { force: true }).catch(() => {})
+  }
+  if (names.length) log(`Startup sweep: removed ${names.length} orphaned file(s) from ${dir}`)
+}
+
 const app = express()
 app.use(express.json())
 
-const upload = multer({
-  dest: INPUTS_DIR,
-  limits: { fileSize: 2 * 1024 * 1024 * 1024, files: 1 },
+const readBodyToFile = (req, dest) => new Promise((resolve, reject) => {
+  const stream = createWriteStream(dest)
+  let size = 0
+  req.on('data', (chunk) => {
+    size += chunk.length
+    if (size > MAX_UPLOAD_BYTES) {
+      stream.destroy()
+      req.destroy(new Error('Upload exceeds the 16 GB limit.'))
+      return
+    }
+    stream.write(chunk)
+  })
+  req.on('aborted', () => reject(new Error(`Request aborted by the client after ${(size / (1024 * 1024)).toFixed(1)} MB.`)))
+  req.on('error', (error) => reject(error))
+  req.on('end', () => stream.end(() => resolve(size)))
 })
 
 const PROFILES = {
@@ -133,29 +156,38 @@ app.get('/api/health', (_req, res) => {
   res.json({ ok: true, service: 'clippress-compress', ffmpeg: process.env.FFMPEG_PATH ?? 'ffmpeg' })
 })
 
-app.post('/api/compress', upload.single('file'), (req, res) => {
-  if (!req.file) return res.status(400).json({ error: 'Missing "file" field.' })
-  log(`Upload received: ${req.file.originalname} (${(req.file.size / (1024 * 1024)).toFixed(1)} MB)`)
-  const codec = String(req.body.codec ?? '')
-  const crf = Number(req.body.crf ?? '')
-  if (!PROFILES[codec] || ![25, 28].includes(crf)) {
-    log(`Upload REJECTED (codec "${codec}", crf "${req.body.crf}")`)
-    rm(req.file.path, { force: true }).catch(() => {})
-    return res.status(400).json({ error: 'codec must be h264 or h265 and crf must be 25 or 28.' })
+app.post('/api/compress', async (req, res) => {
+  const uploadId = randomUUID()
+  const inputPath = join(INPUTS_DIR, `${uploadId}.mp4`)
+  try {
+    const size = await readBodyToFile(req, inputPath)
+    const originalName = decodeURIComponent(String(req.headers['x-filename'] ?? '')) || 'video.mp4'
+    const codec = String(req.headers['x-codec'] ?? '')
+    const crf = Number(req.headers['x-crf'] ?? '')
+    log(`Upload received: ${originalName} (${(size / (1024 * 1024)).toFixed(1)} MB)`)
+    if (!PROFILES[codec] || ![25, 28].includes(crf)) {
+      log(`Upload REJECTED (codec "${codec}", crf "${crf}")`)
+      rm(inputPath, { force: true }).catch(() => {})
+      return res.status(400).json({ error: 'codec must be h264 or h265 and crf must be 25 or 28.' })
+    }
+    const job = {
+      id: uploadId,
+      originalName,
+      inputPath,
+      codec,
+      crf,
+      status: 'queued',
+      progress: 0,
+    }
+    jobs.set(job.id, job)
+    log(`Queued job ${job.id.slice(0, 8)} — ${originalName} (${codec} crf ${crf}) — ${jobs.size} job(s) in queue.`)
+    void runWorker()
+    res.status(201).json(publicJob(job))
+  } catch (error) {
+    log(`Upload FAILED: ${error.message}`)
+    rm(inputPath, { force: true }).catch(() => {})
+    if (!res.headersSent) res.status(400).json({ error: String(error.message ?? error) })
   }
-  const job = {
-    id: randomUUID(),
-    originalName: String(req.body.filename || req.file.originalname || 'video.mp4'),
-    inputPath: req.file.path,
-    codec,
-    crf,
-    status: 'queued',
-    progress: 0,
-  }
-  jobs.set(job.id, job)
-  log(`Queued job ${job.id.slice(0, 8)} — ${job.originalName} (${job.codec} crf ${job.crf}) — ${jobs.size} job(s) in queue.`)
-  void runWorker()
-  res.status(201).json(publicJob(job))
 })
 
 app.get('/api/jobs/:id', (req, res) => {
@@ -189,8 +221,12 @@ app.delete('/api/jobs/:id', (req, res) => {
   res.json({ ok: true })
 })
 
-app.listen(PORT, HOST, async () => {
+const server = app.listen(PORT, HOST, async () => {
   log(`clippress compression server listening on http://${HOST}:${PORT} (pid ${process.pid})`)
+  // A 1.4 GB upload over Wi-Fi can stream for well over 5 minutes; the default
+  // requestTimeout (300s) kills it mid-body. Disable it and log the response.
+  server.requestTimeout = 0
+  server.headersTimeout = 0
   const version = await new Promise((resolve) => {
     const child = spawn('ffmpeg', ['-version'])
     let out = ''
