@@ -96,12 +96,17 @@ const processJob = async (job) => {
   log(`Encoding ${job.originalName} → ${job.outputName} (${job.codec} crf ${job.crf}, ${Number(duration).toFixed(1)}s of source)`)
   const args = ['-y', '-i', job.inputPath, '-c:v', codec.encoder, '-crf', String(job.crf), '-preset', 'medium', '-pix_fmt', 'yuv420p']
   if (job.codec === 'h265') args.push('-tag:v', 'hvc1')
-  args.push('-c:a', 'aac', '-b:a', '128k', '-movflags', '+faststart', job.outputPath)
+  args.push('-c:a', 'aac', '-b:a', '128k', '-movflags', '+faststart', '-progress', 'pipe:2', job.outputPath)
   await new Promise((resolve, reject) => {
     const child = spawn('ffmpeg', args)
     let lastLogged = 0
     let stderr = ''
-    child.stderr.on('data', (chunk) => { stderr += chunk.toString() })
+    child.stderr.on('data', (chunk) => {
+      // Keep only the tail: -progress appends a line per update and it can
+      // grow without bound on long encodes. The last ~8 KB always holds the
+      // newest out_time_us lines plus the trailing error text on failure.
+      stderr = (stderr + chunk.toString()).slice(-8192)
+    })
     const timer = setInterval(() => {
       let progress = 0
       if (duration > 0) progress = Math.round((parseTime(stderr) / duration) * 100)
@@ -134,6 +139,13 @@ const processJob = async (job) => {
 }
 
 const parseTime = (stderr) => {
+  // ffmpeg -progress pipe:2 appends a fresh "out_time_us=<microseconds>" line
+  // on every update. Take the LAST one (the first match is stale ~1s).
+  const usMatches = stderr.match(/out_time_us=(\d+)/g)
+  if (usMatches?.length) {
+    const last = Number(usMatches[usMatches.length - 1].split('=')[1])
+    return last / 1_000_000
+  }
   const match = /time=(\d+):(\d+):(\d+(?:\.\d+)?)/.exec(stderr)
   if (!match) return 0
   return Number(match[1]) * 3600 + Number(match[2]) * 60 + Number(match[3])
