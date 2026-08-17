@@ -29,7 +29,6 @@ html { background: #08090b; } body { min-width: 320px; margin: 0; }
   --t-loading: #ec7e00;
   --t-link-fg: #b8bbff;
   --t-link-danger: #ff939e;
-  --t-error: #ffadb5;
   --t-footer: #777a84;
   --t-modal-bg: #17191d;
   --t-close-bg: #2b2d32;
