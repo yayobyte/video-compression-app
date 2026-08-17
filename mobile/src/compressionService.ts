@@ -17,6 +17,88 @@ const ensureOutputsDir = async () => {
   return OUTPUTS_DIR
 }
 
+// Debug helper: log where the app stores things and what's actually on disk.
+export const logStorageState = async () => {
+  const docs = FileSystem.documentDirectory ?? '(none)'
+  const cache = FileSystem.cacheDirectory ?? '(none)'
+  console.log('[storage] documentDirectory:', docs)
+  console.log('[storage] cacheDirectory:', cache)
+
+  const list = async (dir: string) => {
+    try {
+      const names = await FileSystem.readDirectoryAsync(dir)
+      const entries = await Promise.all(names.map(async (name) => {
+        const info = await FileSystem.getInfoAsync(`${dir}${name}`).catch(() => null)
+        const size = info?.exists && !info?.isDirectory ? info.size : null
+        return size === null ? `📁 ${name}` : `📄 ${name} (${size} bytes)`
+      }))
+      console.log(`[storage] ${dir}:`, entries.length ? entries.join(', ') : '(empty)')
+    } catch (error) {
+      console.log(`[storage] ${dir}:`, 'not readable —', error instanceof Error ? error.message : String(error))
+    }
+  }
+
+  await list(OUTPUTS_DIR)
+  await list(cache)
+}
+
+export type StorageStats = {
+  outputs: { count: number; bytes: number }
+  cache: { count: number; bytes: number }
+}
+
+const CACHE_ORPHAN = /\.compressed\.h2\d+\.crf\d+\.mp4$/i
+
+type DirFilter = RegExp | ((name: string) => boolean)
+
+const summarizeDir = async (dir: string, filter?: DirFilter): Promise<{ count: number; bytes: number }> => {
+  try {
+    const names = await FileSystem.readDirectoryAsync(dir)
+    let count = 0
+    let bytes = 0
+    for (const name of names) {
+      if (filter instanceof RegExp ? !filter.test(name) : filter && !filter(name)) continue
+      const info = await FileSystem.getInfoAsync(`${dir}${name}`).catch(() => null)
+      if (info?.exists && !info.isDirectory) {
+        count += 1
+        bytes += info.size ?? 0
+      }
+    }
+    return { count, bytes }
+  } catch {
+    return { count: 0, bytes: 0 }
+  }
+}
+
+// Storage usage for the "no videos imported" banner: finished outputs in the
+// persistent clippress/ folder + orphaned compressed files left in cache.
+export const getStorageStats = async (): Promise<StorageStats> => {
+  const cache = FileSystem.cacheDirectory ?? ''
+  const [outputs, cacheCount] = await Promise.all([
+    summarizeDir(OUTPUTS_DIR),
+    summarizeDir(cache, CACHE_ORPHAN),
+  ])
+  return { outputs, cache: cacheCount }
+}
+
+// Delete finished outputs in clippress/ and orphaned compressed files in cache.
+export const clearStoredFiles = async (): Promise<StorageStats> => {
+  const cache = FileSystem.cacheDirectory ?? ''
+  const clearDir = async (dir: string, filter?: DirFilter) => {
+    try {
+      const names = await FileSystem.readDirectoryAsync(dir)
+      for (const name of names) {
+        if (filter instanceof RegExp ? !filter.test(name) : filter && !filter(name)) continue
+        await FileSystem.deleteAsync(`${dir}${name}`, { idempotent: true }).catch(() => undefined)
+      }
+    } catch {
+      // nothing readable — nothing to clear
+    }
+  }
+  await Promise.all([clearDir(OUTPUTS_DIR), clearDir(cache, CACHE_ORPHAN)])
+  return getStorageStats()
+}
+
 export const findExistingCompressed = async (fileName: string, codec: Codec, crf: Crf) => {
   const outputName = outputNameFor(fileName, codec, crf)
   const dir = await ensureOutputsDir()

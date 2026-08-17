@@ -8,7 +8,7 @@ import { ActivityIndicator, AppState, Pressable, ScrollView, StyleSheet, Switch,
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context'
 import { formatBytes } from '../shared/domain'
 import type { Codec, Crf } from '../shared/domain'
-import { checkServerHealth, compressVideo, findExistingCompressed, resolveServerUrl, saveServerUrl } from './src/compressionService'
+import { checkServerHealth, clearStoredFiles, compressVideo, findExistingCompressed, getStorageStats, logStorageState, resolveServerUrl, saveServerUrl } from './src/compressionService'
 import { buttons, colors, gaps, radius, spacing, surfaces, typography } from './src/theme'
 
 type JobStatus = 'ready' | 'converting' | 'completed' | 'failed' | 'cancelled'
@@ -82,10 +82,24 @@ export default function App() {
   const [savingServer, setSavingServer] = useState(false)
   const [serverHealth, setServerHealth] = useState<{ ok: boolean; error?: string } | null>(null)
   const [preview, setPreview] = useState<string | null>(null)
+  const [storage, setStorage] = useState<{ outputs: { count: number; bytes: number }; cache: { count: number; bytes: number } } | null>(null)
+  const [clearingStorage, setClearingStorage] = useState(false)
 
   const pingServer = async (url: string) => {
     setServerHealth(null)
     setServerHealth(await checkServerHealth(url))
+  }
+
+  const refreshStorage = async () => setStorage(await getStorageStats())
+
+  const clearStorage = async () => {
+    if (clearingStorage) return
+    setClearingStorage(true)
+    try {
+      setStorage(await clearStoredFiles())
+    } finally {
+      setClearingStorage(false)
+    }
   }
 
   useEffect(() => {
@@ -94,6 +108,8 @@ export default function App() {
       setServerUrl(url)
       setServerInput(url)
       if (url) void pingServer(url)
+      void logStorageState()
+      void refreshStorage()
     })()
   }, [])
 
@@ -295,6 +311,17 @@ export default function App() {
             <View style={styles.empty}>
               <Text style={styles.emptyTitle}>No videos imported yet.</Text>
               <Text style={styles.emptyBody}>Import a few videos from your library to start reviewing them.</Text>
+              {storage && (storage.outputs.count > 0 || storage.cache.count > 0) ? (
+                <View style={styles.storageRow}>
+                  <Text style={styles.storageText}>
+                    Stored: {storage.outputs.count} output{storage.outputs.count === 1 ? '' : 's'} ({formatBytes(storage.outputs.bytes)}){storage.cache.count ? ` · ${storage.cache.count} cached (${formatBytes(storage.cache.bytes)})` : ''}
+                  </Text>
+                  <Pressable style={[styles.storageClear, clearingStorage && styles.storageClearDisabled]} disabled={clearingStorage} onPress={() => void clearStorage()}>
+                    <Ionicons name="trash-outline" size={14} color={colors.danger} />
+                    <Text style={styles.storageClearText}>{clearingStorage ? 'Clearing…' : 'Clear stored files'}</Text>
+                  </Pressable>
+                </View>
+              ) : null}
             </View>
           ) : assets.map((asset) => (
             <View key={asset.id} style={styles.card}>
@@ -393,6 +420,11 @@ const styles = StyleSheet.create({
   empty: { ...surfaces.card, padding: spacing.xxl, alignItems: 'center', gap: gaps.sm },
   emptyTitle: { ...typography.heading, color: colors.text },
   emptyBody: { ...typography.body, color: colors.textMuted, textAlign: 'center' },
+  storageRow: { marginTop: spacing.sm, flexDirection: 'row', alignItems: 'center', gap: gaps.md, flexWrap: 'wrap' },
+  storageText: { ...typography.caption, color: colors.textMuted },
+  storageClear: { ...buttons.link, flexDirection: 'row', alignItems: 'center', gap: gaps.xxs },
+  storageClearDisabled: { opacity: 0.6 },
+  storageClearText: { ...typography.link, color: colors.danger },
   card: { ...surfaces.card, gap: gaps.sm },
   cardHead: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: gaps.sm },
   cardName: { ...typography.name, color: colors.text, flex: 1 },
