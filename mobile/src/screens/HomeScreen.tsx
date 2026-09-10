@@ -1,7 +1,7 @@
 import { StatusBar } from 'expo-status-bar'
 import { ScrollView, StyleSheet, Text, View } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
-import { colors, gaps, spacing, surfaces, typography } from '../theme'
+import { colors, gaps, radius, spacing, surfaces, typography } from '../theme'
 import ActionButtons from '../components/ActionButtons'
 import BrandHeader from '../components/BrandHeader'
 import EmptyState from '../components/EmptyState'
@@ -11,6 +11,7 @@ import ServerConfigCard from '../components/ServerConfigCard'
 import StorageInspector from '../components/StorageInspector'
 import VideoCard from '../components/VideoCard'
 import useAssets from '../hooks/useAssets'
+import usePersistence from '../hooks/usePersistence'
 import useServerConnection from '../hooks/useServerConnection'
 import useStorage from '../hooks/useStorage'
 
@@ -18,6 +19,12 @@ export default function HomeScreen() {
   const server = useServerConnection()
   const storage = useStorage()
   const assets = useAssets(server.serverUrl, server.pingServer)
+  const persisted = usePersistence({
+    assets: assets.assets,
+    globalProfile: assets.globalProfile,
+    setAssets: assets.setAssets,
+    setGlobalProfile: assets.setGlobalProfile,
+  })
 
   return (
     <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
@@ -26,6 +33,8 @@ export default function HomeScreen() {
         <BrandHeader />
 
         <Text style={styles.title}>Make your video library <Text style={styles.titleAccent}>lighter.</Text></Text>
+
+        {persisted.notice ? <Text style={styles.notice}>{persisted.notice}</Text> : null}
 
         <View style={styles.controlCard}>
           <ProfileSwitches profile={assets.globalProfile} onChange={assets.setGlobalProfile} />
@@ -52,6 +61,7 @@ export default function HomeScreen() {
             onTogglePreview={() => assets.setPreview((current) => current === asset.id ? null : asset.id)}
             onConvert={() => void assets.runConvert(asset)}
             onShare={() => void assets.shareOutput(asset)}
+            onDeleteOriginal={() => assets.deleteOriginal(asset)}
             onSetProfile={(codec, crf) => assets.setProfileOn(asset.id, asset.name, codec, crf)}
           />
         )) : (
@@ -69,6 +79,7 @@ const styles = StyleSheet.create({
   scroll: { padding: spacing.xl, gap: gaps.xl },
   title: { ...typography.title, color: colors.text, marginTop: spacing.xxs },
   titleAccent: { color: colors.accent },
+  notice: { ...typography.captionEmphasis, color: colors.accent, backgroundColor: colors.surfaceScrim, padding: spacing.sm, borderRadius: radius.md, textAlign: 'center' },
   controlCard: { ...surfaces.card, gap: gaps.sm },
   divider: { ...surfaces.divider, marginVertical: spacing.xxs },
 })

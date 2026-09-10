@@ -197,6 +197,17 @@ export const clearStoredFiles = async (): Promise<StorageStats> => {
   return getStorageStats()
 }
 
+// Delete one imported source copy (the per-card "Delete original" action).
+// Removes exactly that file and nothing else — the compressed output in
+// clippress/ and every other card are untouched.
+export const deleteSourceFile = async (uri: string) => {
+  try {
+    await FileSystem.deleteAsync(uri, { idempotent: true })
+  } catch {
+    // already gone
+  }
+}
+
 export const findExistingCompressed = async (fileName: string, codec: Codec, crf: Crf) => {
   const outputName = outputNameFor(fileName, codec, crf)
   const dir = await ensureOutputsDir()
@@ -236,6 +247,11 @@ export const checkServerHealth = async (serverUrl: string, timeoutMs = 4000): Pr
   }
 }
 
+// The network task behind a conversion leg. Registered via `registerTask` so a
+// caller can cancel the stale attempt when the app returns from the background
+// (iOS kills in-flight uploads/downloads on suspension).
+export type NetworkTask = FileSystem.UploadTask | FileSystem.DownloadResumable
+
 export type CompressOptions = {
   serverUrl: string
   fileUri: string
@@ -244,6 +260,11 @@ export type CompressOptions = {
   crf: Crf
   onProgress: (percent: number) => void
   onPhase: (phase: 'uploading' | 'compressing' | 'downloading') => void
+  registerTask?: (task: NetworkTask) => void
+  // When this returns true the attempt has been superseded (e.g. the app came
+  // back to the foreground and restarted the conversion); bail out early so the
+  // stale poll loop can never report a success the UI has moved past.
+  isCancelled?: () => boolean
 }
 
 export type CompressResult = {
@@ -259,6 +280,7 @@ const uploadVideo = (
   codec: Codec,
   crf: Crf,
   onUploadProgress: (percent: number) => void,
+  registerTask?: (task: NetworkTask) => void,
 ): Promise<{ status: number; text: string }> => {
   return new Promise((resolve, reject) => {
     const task = FileSystem.createUploadTask(
@@ -284,6 +306,7 @@ const uploadVideo = (
         }
       },
     )
+    registerTask?.(task)
     void task.uploadAsync().then(
       (result) => {
         if (!result) {
@@ -310,6 +333,7 @@ export const compressVideo = async (options: CompressOptions): Promise<CompressR
     options.codec,
     options.crf,
     options.onProgress,
+    options.registerTask,
   )
   let job: { id: string }
   try {
@@ -324,7 +348,9 @@ export const compressVideo = async (options: CompressOptions): Promise<CompressR
   let progress = 0
   let outputName = ''
   for (let tries = 0; tries < 1800; tries += 1) {
+    if (options.isCancelled?.()) throw new Error('Stopped while the app was resuming.')
     await new Promise((resolve) => setTimeout(resolve, 1000))
+    if (options.isCancelled?.()) throw new Error('Stopped while the app was resuming.')
     const status = await fetch(`${base}/api/jobs/${job.id}`)
     if (!status.ok) throw new Error(`Status check failed (${status.status}).`)
     const body = (await status.json()) as {
@@ -357,6 +383,7 @@ export const compressVideo = async (options: CompressOptions): Promise<CompressR
             }
           },
         )
+        options.registerTask?.(task)
         void task.downloadAsync().then(
           (result) => resolve(result?.status ?? 0),
           (error) => reject(error instanceof Error ? error : new Error(String(error))),

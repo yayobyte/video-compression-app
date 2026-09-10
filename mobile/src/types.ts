@@ -16,6 +16,7 @@ export type VideoAsset = {
   outputUri?: string
   outputSize?: number
   error?: string
+  sourceDeleted?: boolean
 }
 
 export const STATUS_LABEL: Record<JobStatus, string> = {

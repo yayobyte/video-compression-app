@@ -1,10 +1,11 @@
 import * as DocumentPicker from 'expo-document-picker'
 import * as Sharing from 'expo-sharing'
 import { useEffect, useRef, useState } from 'react'
-import { AppState } from 'react-native'
+import { Alert, AppState } from 'react-native'
 import type { Profile } from '../../../shared/domain'
 import type { Codec, Crf } from '../../../shared/domain'
-import { compressVideo, findExistingCompressed } from '../compressionService'
+import { compressVideo, deleteSourceFile, findExistingCompressed } from '../compressionService'
+import type { NetworkTask } from '../compressionService'
 import type { VideoAsset } from '../types'
 
 // Owns the video library state for the home screen: assets, global profile,
@@ -13,8 +14,17 @@ import type { VideoAsset } from '../types'
 export default function useAssets(serverUrl: string, pingServer: (url: string) => void) {
   const [globalProfile, setGlobalProfile] = useState<Profile>({ codec: 'h265', crf: 25 })
   const [assets, setAssets] = useState<VideoAsset[]>([])
-  const [busy, setBusy] = useState(false)
+  const [busy, setBusyState] = useState(false)
   const [preview, setPreview] = useState<string | null>(null)
+
+  // `busyRef` mirrors `busy` so the foreground-recovery path can release the
+  // latch synchronously before re-running a conversion (the async state update
+  // alone would not land before `runConvert` re-checked the guard).
+  const busyRef = useRef(busy)
+  const setBusy = (value: boolean) => {
+    busyRef.current = value
+    setBusyState(value)
+  }
 
   const serverUrlRef = useRef(serverUrl)
   serverUrlRef.current = serverUrl
@@ -22,6 +32,14 @@ export default function useAssets(serverUrl: string, pingServer: (url: string) =
   pingServerRef.current = pingServer
   const assetsRef = useRef(assets)
   assetsRef.current = assets
+
+  // Per-card in-flight network task + a generation counter. A background/
+  // foreground cycle kills the phone↔server task (iOS tears down the session),
+  // so on resume we cancel the stale task and bump the generation: any promise
+  // from the dead attempt then sees itself superseded and can never write state
+  // over the fresh run.
+  const inflightTasks = useRef(new Map<string, NetworkTask>())
+  const generation = useRef(new Map<string, number>())
 
   const updateAsset = (id: string, update: Partial<VideoAsset>) => {
     setAssets((current) => current.map((item) => item.id === id ? { ...item, ...update } : item))
@@ -53,12 +71,15 @@ export default function useAssets(serverUrl: string, pingServer: (url: string) =
   }
 
   const runConvert = async (asset: VideoAsset) => {
-    if (busy) return
+    if (busyRef.current) return
     if (!serverUrl) {
       updateAsset(asset.id, { status: 'failed', progress: 0, error: 'Set the compression service address first, then try again.' })
       return
     }
     setBusy(true)
+    const gen = (generation.current.get(asset.id) ?? 0) + 1
+    generation.current.set(asset.id, gen)
+    const superseded = () => generation.current.get(asset.id) !== gen
     updateAsset(asset.id, { status: 'converting', progress: 0, phase: 'uploading', error: undefined })
     try {
       const result = await compressVideo({
@@ -67,13 +88,17 @@ export default function useAssets(serverUrl: string, pingServer: (url: string) =
         fileName: asset.name,
         codec: asset.profile.codec,
         crf: asset.profile.crf,
-        onProgress: (percent) => updateAsset(asset.id, { progress: Math.max(0, percent) }),
-        onPhase: (phase) => updateAsset(asset.id, { phase }),
+        onProgress: (percent) => { if (!superseded()) updateAsset(asset.id, { progress: Math.max(0, percent) }) },
+        onPhase: (phase) => { if (!superseded()) updateAsset(asset.id, { phase }) },
+        registerTask: (task) => inflightTasks.current.set(asset.id, task),
+        isCancelled: superseded,
       })
+      if (superseded()) return
       updateAsset(asset.id, { status: 'completed', progress: 100, outputUri: result.outputUri, outputSize: result.outputSize, error: undefined })
     } catch (error) {
+      if (superseded()) return
       const detail = error instanceof Error ? error.message : String(error)
-      const offline = /network|failed to fetch|timed out|fetch|socket|connection/i.test(detail)
+      const offline = /network|failed to fetch|timed out|fetch|socket|connection|cancelled/i.test(detail)
       updateAsset(asset.id, {
         status: 'failed',
         progress: 0,
@@ -82,22 +107,46 @@ export default function useAssets(serverUrl: string, pingServer: (url: string) =
           : detail,
       })
     } finally {
-      setBusy(false)
+      inflightTasks.current.delete(asset.id)
+      if (!superseded()) setBusy(false)
     }
   }
 
   const runConvertRef = useRef(runConvert)
   runConvertRef.current = runConvert
 
-  // When the app returns to the foreground, re-ping the service and resume any
-  // card still stuck in `converting` (backgrounded mid-upload/compress).
+  // When the app returns to the foreground, re-ping the service and recover any
+  // card stuck mid-conversion. The upload and download legs of a conversion
+  // run through the phone's network stack, which iOS suspends/kills, so those
+  // attempts are unrecoverable in place: cancel the stale OS task, supersede
+  // the dead promise, release the busy latch, and restart the conversion from
+  // scratch. Cards that were in the `compressing` poll loop have no phone-side
+  // task — the encode runs on the Mac and the poll loop just resumes on JS wake.
   useEffect(() => {
-    const sub = AppState.addEventListener('change', (state) => {
-      if (state !== 'active') return
+    const recover = async () => {
       const url = serverUrlRef.current
       if (url) void pingServerRef.current(url)
-      const stuck = assetsRef.current.filter((asset) => asset.status === 'converting')
-      for (const asset of stuck) void runConvertRef.current(asset)
+
+      // A background-session upload that genuinely reached the server resolves
+      // right after resume. Wait a beat so finished work completes on its own
+      // instead of being cancelled + re-uploaded: the deferred promise either
+      // moves the card to `compressing`/`downloading`/`completed`, or leaves it
+      // `converting` when the OS task really died and needs a restart below.
+      await new Promise((resolve) => setTimeout(resolve, 1500))
+
+      for (const asset of assetsRef.current.filter((a) => a.status === 'converting')) {
+        if (asset.phase !== 'uploading' && asset.phase !== 'downloading') continue
+        const task = inflightTasks.current.get(asset.id)
+        if (task) void task.cancelAsync().catch(() => undefined)
+        inflightTasks.current.delete(asset.id)
+        generation.current.set(asset.id, (generation.current.get(asset.id) ?? 0) + 1)
+        setBusy(false)
+        void runConvertRef.current(asset)
+      }
+    }
+    const sub = AppState.addEventListener('change', (state) => {
+      if (state !== 'active') return
+      void recover()
     })
     return () => sub.remove()
   }, [])
@@ -107,6 +156,27 @@ export default function useAssets(serverUrl: string, pingServer: (url: string) =
     if (await Sharing.isAvailableAsync()) {
       await Sharing.shareAsync(asset.outputUri, { mimeType: 'video/mp4', dialogTitle: 'Share compressed video' })
     }
+  }
+
+  // Remove the imported source copy once its conversion is done, so the phone
+  // keeps only the compressed output. The card stays in the list (still
+  // shareable) but can no longer be re-converted. Confirmed first — destructive.
+  const deleteOriginal = (asset: VideoAsset) => {
+    if (asset.status !== 'completed' || asset.sourceDeleted || !asset.uri) return
+    Alert.alert(
+      'Delete original?',
+      `This removes the source video from your phone and frees up space. The compressed copy stays in the list and can still be shared, but this video can no longer be re-converted.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete original',
+          style: 'destructive',
+          onPress: () => {
+            void deleteSourceFile(asset.uri).then(() => updateAsset(asset.id, { sourceDeleted: true }))
+          },
+        },
+      ],
+    )
   }
 
   const convertAll = () => {
@@ -129,5 +199,5 @@ export default function useAssets(serverUrl: string, pingServer: (url: string) =
   const canStart = assets.some((asset) => ['ready', 'failed', 'cancelled'].includes(asset.status))
   const completed = assets.filter((asset) => asset.status === 'completed').length
 
-  return { globalProfile, setGlobalProfile, assets, busy, preview, setPreview, importVideos, runConvert, shareOutput, convertAll, setProfileOn, canStart, completed }
+  return { globalProfile, setGlobalProfile, assets, setAssets, busy, preview, setPreview, importVideos, runConvert, shareOutput, deleteOriginal, convertAll, setProfileOn, canStart, completed }
 }
