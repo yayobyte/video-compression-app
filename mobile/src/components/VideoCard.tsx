@@ -17,11 +17,12 @@ type Props = {
   // Set while an on-device job can be cancelled.
   onCancel?: () => void
   onShare: () => void
+  onSaveToGallery: () => void
   onDeleteOriginal: () => void
   onSetProfile: (codec: Codec, crf: Crf) => void
 }
 
-export default function VideoCard({ asset, previewOpen, onTogglePreview, onConvert, onCancel, onShare, onDeleteOriginal, onSetProfile }: Props) {
+export default function VideoCard({ asset, previewOpen, onTogglePreview, onConvert, onCancel, onShare, onSaveToGallery, onDeleteOriginal, onSetProfile }: Props) {
   const converting = asset.status === 'converting'
   const completed = asset.status === 'completed'
   return (
@@ -71,6 +72,7 @@ export default function VideoCard({ asset, previewOpen, onTogglePreview, onConve
             ? <>
                 {!asset.sourceDeleted && <LinkAction icon="trash-outline" label="Delete original" onPress={onDeleteOriginal} />}
                 {!asset.sourceDeleted && <LinkAction icon="refresh-outline" label="Re-convert" onPress={onConvert} />}
+                <LinkAction icon="download-outline" label="Save to gallery" onPress={onSaveToGallery} />
                 <LinkAction icon="share-outline" label="Share" onPress={onShare} />
               </>
             : <LinkAction icon={asset.status === 'failed' ? 'refresh' : 'play'} label={asset.status === 'failed' ? 'Try again' : 'Convert'} onPress={onConvert} />}

@@ -5,7 +5,6 @@
     "version": "0.0.1",
     "orientation": "portrait",
     "userInterfaceStyle": "light",
-    "newArchEnabled": true,
     "icon": "./assets/icon-solid.png",
     "backgroundColor": "#0a0a0a",
     "ios": {
@@ -39,7 +38,19 @@
           "backgroundColor": "#0a0a0a"
         }
       ],
-      "expo-font"
+      "expo-font",
+      "expo-sharing",
+      "expo-status-bar",
+      [
+        "expo-media-library",
+        {
+          "photosPermission": false,
+          "savePhotosPermission": "Allow Clippress to save compressed videos to your Photos.",
+          "granularPermissions": [
+            "video"
+          ]
+        }
+      ]
     ]
   }
 }

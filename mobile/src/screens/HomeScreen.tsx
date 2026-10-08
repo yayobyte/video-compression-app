@@ -67,6 +67,7 @@ export default function HomeScreen() {
             onConvert={() => void assets.runConvert(asset)}
             onCancel={engine.engine === 'device' && asset.phase === 'compressing' ? () => assets.cancelConvert(asset) : undefined}
             onShare={() => void assets.shareOutput(asset)}
+            onSaveToGallery={() => void assets.saveToGallery(asset)}
             onDeleteOriginal={() => assets.deleteOriginal(asset)}
             onSetProfile={(codec, crf) => assets.setProfileOn(asset.id, asset.name, codec, crf)}
           />

@@ -1,7 +1,8 @@
 import * as DocumentPicker from 'expo-document-picker'
+import * as MediaLibrary from 'expo-media-library'
 import * as Sharing from 'expo-sharing'
 import { useEffect, useRef, useState } from 'react'
-import { Alert, AppState } from 'react-native'
+import { Alert, AppState, Platform } from 'react-native'
 import type { Profile } from '../../../shared/domain'
 import type { Codec, Crf } from '../../../shared/domain'
 import { compressVideo, deleteSourceFile, findExistingCompressed } from '../compressionService'
@@ -12,6 +13,8 @@ import type { VideoAsset } from '../types'
 // Owns the video library state for the home screen: assets, global profile,
 // busy/preview UI state, and all the side-effect handlers (import, convert,
 // share, per-card profile, foreground recovery).
+const ALBUM_NAME = 'Clippress'
+
 export default function useAssets(serverUrl: string, pingServer: (url: string) => void, engine: Engine) {
   const [globalProfile, setGlobalProfile] = useState<Profile>({ codec: 'h265', crf: 25 })
   const [assets, setAssets] = useState<VideoAsset[]>([])
@@ -218,6 +221,28 @@ export default function useAssets(serverUrl: string, pingServer: (url: string) =
     }
   }
 
+  // Copy the output into a "Clippress" album in Photos (iOS) / Gallery (Android).
+  // The app's own clippress/ folder is private on Android, so this is how the
+  // file becomes visible outside the app. Write-only access is enough.
+  const saveToGallery = async (asset: VideoAsset) => {
+    if (!asset.outputUri) return
+    const place = Platform.OS === 'ios' ? 'Photos' : 'Gallery'
+    try {
+      const permission = await MediaLibrary.requestPermissionsAsync(true, ['video'])
+      if (!permission.granted) {
+        Alert.alert('Permission needed', `Allow Clippress to save videos to ${place} in Settings.`)
+        return
+      }
+      const album = await MediaLibrary.Album.get(ALBUM_NAME)
+      // moveAssets=false keeps the app's own copy in clippress/ (Android moves by default).
+      if (album) await MediaLibrary.Asset.create(asset.outputUri, album)
+      else await MediaLibrary.Album.create(ALBUM_NAME, [asset.outputUri], false)
+      Alert.alert(`Saved to ${place}`, `Find it in the ${ALBUM_NAME} album.`)
+    } catch (error) {
+      Alert.alert(`Couldn't save to ${place}`, error instanceof Error ? error.message : String(error))
+    }
+  }
+
   // Remove the imported source copy once its conversion is done, so the phone
   // keeps only the compressed output. The card stays in the list (still
   // shareable) but can no longer be re-converted. Confirmed first — destructive.
@@ -259,5 +284,5 @@ export default function useAssets(serverUrl: string, pingServer: (url: string) =
   const canStart = assets.some((asset) => ['ready', 'failed', 'cancelled'].includes(asset.status))
   const completed = assets.filter((asset) => asset.status === 'completed').length
 
-  return { globalProfile, setGlobalProfile, assets, setAssets, busy, preview, setPreview, importVideos, runConvert, cancelConvert, shareOutput, deleteOriginal, convertAll, setProfileOn, canStart, completed }
+  return { globalProfile, setGlobalProfile, assets, setAssets, busy, preview, setPreview, importVideos, runConvert, cancelConvert, shareOutput, saveToGallery, deleteOriginal, convertAll, setProfileOn, canStart, completed }
 }
