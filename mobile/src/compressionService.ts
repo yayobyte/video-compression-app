@@ -6,9 +6,10 @@ import type { Codec, Crf } from '../../shared/domain'
 
 const DEFAULT_PORT = 8787
 const URL_KEY = 'clippress.serverUrl'
+const ENGINE_KEY = 'clippress.engine'
 const OUTPUTS_DIR = `${FileSystem.documentDirectory ?? ''}clippress/`
 
-const ensureOutputsDir = async () => {
+export const ensureOutputsDir = async () => {
   try {
     await FileSystem.makeDirectoryAsync(OUTPUTS_DIR, { intermediates: true })
   } catch {
@@ -227,6 +228,19 @@ export const resolveServerUrl = async (): Promise<string> => {
 }
 
 export const saveServerUrl = (url: string) => AsyncStorage.setItem(URL_KEY, url.trim().replace(/\/+$/, '')).catch(() => undefined)
+
+// Where a conversion runs: on the Mac compression service, or on the phone's
+// hardware encoder (react-native-compressor, H.264 only).
+export type Engine = 'server' | 'device'
+
+// A stored 'device' choice falls back to 'server' when the native module is
+// missing (Expo Go).
+export const resolveEngine = async (deviceAvailable: boolean): Promise<Engine> => {
+  const stored = await AsyncStorage.getItem(ENGINE_KEY).catch(() => null)
+  return stored === 'device' && deviceAvailable ? 'device' : 'server'
+}
+
+export const saveEngine = (engine: Engine) => AsyncStorage.setItem(ENGINE_KEY, engine).catch(() => undefined)
 
 export type ServerHealth = { ok: boolean; service?: string; error?: string }
 

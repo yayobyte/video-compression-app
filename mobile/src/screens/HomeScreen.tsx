@@ -5,12 +5,14 @@ import { colors, gaps, radius, spacing, surfaces, typography } from '../theme'
 import ActionButtons from '../components/ActionButtons'
 import BrandHeader from '../components/BrandHeader'
 import EmptyState from '../components/EmptyState'
+import EngineSwitch from '../components/EngineSwitch'
 import FooterNote from '../components/FooterNote'
 import ProfileSwitches from '../components/ProfileSwitches'
 import ServerConfigCard from '../components/ServerConfigCard'
 import StorageInspector from '../components/StorageInspector'
 import VideoCard from '../components/VideoCard'
 import useAssets from '../hooks/useAssets'
+import useEngine from '../hooks/useEngine'
 import usePersistence from '../hooks/usePersistence'
 import useServerConnection from '../hooks/useServerConnection'
 import useStorage from '../hooks/useStorage'
@@ -18,7 +20,8 @@ import useStorage from '../hooks/useStorage'
 export default function HomeScreen() {
   const server = useServerConnection()
   const storage = useStorage()
-  const assets = useAssets(server.serverUrl, server.pingServer)
+  const engine = useEngine()
+  const assets = useAssets(server.serverUrl, server.pingServer, engine.engine)
   const persisted = usePersistence({
     assets: assets.assets,
     globalProfile: assets.globalProfile,
@@ -37,16 +40,18 @@ export default function HomeScreen() {
         {persisted.notice ? <Text style={styles.notice}>{persisted.notice}</Text> : null}
 
         <View style={styles.controlCard}>
-          <ProfileSwitches profile={assets.globalProfile} onChange={assets.setGlobalProfile} />
+          <EngineSwitch engine={engine.engine} deviceAvailable={engine.deviceAvailable} onChange={engine.setEngine} />
           <View style={styles.divider} />
-          <ServerConfigCard
+          <ProfileSwitches profile={assets.globalProfile} onChange={assets.setGlobalProfile} isCodecLocked={engine.engine === 'device'} />
+          {engine.engine === 'server' ? <View style={styles.divider} /> : null}
+          {engine.engine === 'server' ? <ServerConfigCard
             serverInput={server.serverInput}
             savingServer={server.savingServer}
             serverHealth={server.serverHealth}
             onChangeInput={server.setServerInput}
             onApply={server.applyServerUrl}
             onCheck={() => void server.pingServer(server.serverUrl)}
-          />
+          /> : null}
         </View>
 
         <ActionButtons canStart={assets.canStart} busy={assets.busy} onImport={() => void assets.importVideos()} onConvert={assets.convertAll} />
@@ -60,6 +65,7 @@ export default function HomeScreen() {
             previewOpen={assets.preview === asset.id}
             onTogglePreview={() => assets.setPreview((current) => current === asset.id ? null : asset.id)}
             onConvert={() => void assets.runConvert(asset)}
+            onCancel={engine.engine === 'device' && asset.phase === 'compressing' ? () => assets.cancelConvert(asset) : undefined}
             onShare={() => void assets.shareOutput(asset)}
             onDeleteOriginal={() => assets.deleteOriginal(asset)}
             onSetProfile={(codec, crf) => assets.setProfileOn(asset.id, asset.name, codec, crf)}

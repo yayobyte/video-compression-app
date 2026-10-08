@@ -5,20 +5,24 @@ import { colors, spacing, typography } from '../theme'
 type Props = {
   profile: Profile
   onChange: (profile: Profile) => void
+  // On device only encodes H.264, so the codec switch is locked there.
+  isCodecLocked?: boolean
 }
 
 // Global codec + compression switches on the home screen.
-export default function ProfileSwitches({ profile, onChange }: Props) {
+export default function ProfileSwitches({ profile, onChange, isCodecLocked = false }: Props) {
+  const codec = isCodecLocked ? 'h264' : profile.codec
   return (
     <>
       <Text style={styles.label}>PROFILE</Text>
       <View style={styles.row}>
         <View style={styles.info}>
           <Text style={styles.switchLabel}>Codec</Text>
-          <Text style={styles.switchValue}>{profile.codec === 'h265' ? 'H.265 / HEVC' : 'H.264'}</Text>
+          <Text style={styles.switchValue}>{codec === 'h265' ? 'H.265 / HEVC' : 'H.264'}</Text>
         </View>
         <Switch
-          value={profile.codec === 'h265'}
+          value={codec === 'h265'}
+          disabled={isCodecLocked}
           onValueChange={(enabled) => onChange({ ...profile, codec: enabled ? 'h265' : 'h264' })}
           trackColor={{ true: colors.primarySoft, false: colors.elevated }}
           thumbColor={colors.text}

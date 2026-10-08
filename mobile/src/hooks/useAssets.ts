@@ -5,13 +5,14 @@ import { Alert, AppState } from 'react-native'
 import type { Profile } from '../../../shared/domain'
 import type { Codec, Crf } from '../../../shared/domain'
 import { compressVideo, deleteSourceFile, findExistingCompressed } from '../compressionService'
-import type { NetworkTask } from '../compressionService'
+import type { Engine, NetworkTask } from '../compressionService'
+import { compressOnDevice } from '../onDeviceEngine'
 import type { VideoAsset } from '../types'
 
 // Owns the video library state for the home screen: assets, global profile,
 // busy/preview UI state, and all the side-effect handlers (import, convert,
 // share, per-card profile, foreground recovery).
-export default function useAssets(serverUrl: string, pingServer: (url: string) => void) {
+export default function useAssets(serverUrl: string, pingServer: (url: string) => void, engine: Engine) {
   const [globalProfile, setGlobalProfile] = useState<Profile>({ codec: 'h265', crf: 25 })
   const [assets, setAssets] = useState<VideoAsset[]>([])
   const [busy, setBusyState] = useState(false)
@@ -40,6 +41,13 @@ export default function useAssets(serverUrl: string, pingServer: (url: string) =
   // over the fresh run.
   const inflightTasks = useRef(new Map<string, NetworkTask>())
   const generation = useRef(new Map<string, number>())
+  // On-device jobs: the native cancel for the running job, and whether the app
+  // went to the background while it ran. iOS stops the hardware encoder in the
+  // background, so a job that fails after that is re-run on foreground instead
+  // of being marked failed.
+  const cancelOnDevice = useRef<(() => void) | null>(null)
+  const backgroundedDuringDevice = useRef(false)
+  const resumeQueue = useRef<string[]>([])
 
   const updateAsset = (id: string, update: Partial<VideoAsset>) => {
     setAssets((current) => current.map((item) => item.id === id ? { ...item, ...update } : item))
@@ -70,8 +78,52 @@ export default function useAssets(serverUrl: string, pingServer: (url: string) =
     }
   }
 
+  const runConvertOnDevice = async (asset: VideoAsset) => {
+    setBusy(true)
+    backgroundedDuringDevice.current = false
+    const gen = (generation.current.get(asset.id) ?? 0) + 1
+    generation.current.set(asset.id, gen)
+    const superseded = () => generation.current.get(asset.id) !== gen
+    updateAsset(asset.id, { status: 'converting', progress: 0, phase: 'compressing', error: undefined })
+    try {
+      const result = await compressOnDevice({
+        fileUri: asset.uri,
+        fileName: asset.name,
+        crf: asset.profile.crf,
+        onProgress: (percent) => { if (!superseded()) updateAsset(asset.id, { progress: percent }) },
+        registerCancel: (cancel) => { cancelOnDevice.current = cancel },
+      })
+      if (superseded()) return
+      updateAsset(asset.id, { status: 'completed', progress: 100, outputUri: result.outputUri, outputSize: result.outputSize, error: undefined })
+    } catch (error) {
+      if (superseded()) return
+      if (backgroundedDuringDevice.current) {
+        updateAsset(asset.id, { status: 'ready', progress: 0, phase: undefined, error: undefined })
+        resumeQueue.current.push(asset.id)
+        return
+      }
+      updateAsset(asset.id, { status: 'failed', progress: 0, error: error instanceof Error ? error.message : String(error) })
+    } finally {
+      cancelOnDevice.current = null
+      if (!superseded()) setBusy(false)
+    }
+  }
+
+  const cancelConvert = (asset: VideoAsset) => {
+    if (asset.status !== 'converting' || asset.phase !== 'compressing' || !cancelOnDevice.current) return
+    cancelOnDevice.current()
+    generation.current.set(asset.id, (generation.current.get(asset.id) ?? 0) + 1)
+    cancelOnDevice.current = null
+    setBusy(false)
+    updateAsset(asset.id, { status: 'cancelled', progress: 0, phase: undefined })
+  }
+
   const runConvert = async (asset: VideoAsset) => {
     if (busyRef.current) return
+    if (engine === 'device') {
+      await runConvertOnDevice(asset)
+      return
+    }
     if (!serverUrl) {
       updateAsset(asset.id, { status: 'failed', progress: 0, error: 'Set the compression service address first, then try again.' })
       return
@@ -134,6 +186,13 @@ export default function useAssets(serverUrl: string, pingServer: (url: string) =
       // `converting` when the OS task really died and needs a restart below.
       await new Promise((resolve) => setTimeout(resolve, 1500))
 
+      // On-device jobs iOS interrupted in the background, one after another.
+      const queued = resumeQueue.current
+      resumeQueue.current = []
+      void assetsRef.current
+        .filter((asset) => queued.includes(asset.id))
+        .reduce((chain, asset) => chain.then(() => runConvertRef.current(asset)), Promise.resolve())
+
       for (const asset of assetsRef.current.filter((a) => a.status === 'converting')) {
         if (asset.phase !== 'uploading' && asset.phase !== 'downloading') continue
         const task = inflightTasks.current.get(asset.id)
@@ -145,6 +204,7 @@ export default function useAssets(serverUrl: string, pingServer: (url: string) =
       }
     }
     const sub = AppState.addEventListener('change', (state) => {
+      if (state === 'background' && cancelOnDevice.current) backgroundedDuringDevice.current = true
       if (state !== 'active') return
       void recover()
     })
@@ -199,5 +259,5 @@ export default function useAssets(serverUrl: string, pingServer: (url: string) =
   const canStart = assets.some((asset) => ['ready', 'failed', 'cancelled'].includes(asset.status))
   const completed = assets.filter((asset) => asset.status === 'completed').length
 
-  return { globalProfile, setGlobalProfile, assets, setAssets, busy, preview, setPreview, importVideos, runConvert, shareOutput, deleteOriginal, convertAll, setProfileOn, canStart, completed }
+  return { globalProfile, setGlobalProfile, assets, setAssets, busy, preview, setPreview, importVideos, runConvert, cancelConvert, shareOutput, deleteOriginal, convertAll, setProfileOn, canStart, completed }
 }

@@ -1,0 +1,23 @@
+diff --git a/node_modules/react-native-compressor/android/src/main/java/com/reactnativecompressor/Video/VideoCompressor/utils/CompressorUtils.kt b/node_modules/react-native-compressor/android/src/main/java/com/reactnativecompressor/Video/VideoCompressor/utils/CompressorUtils.kt
+index b24b9cb..35dcd62 100644
+--- a/node_modules/react-native-compressor/android/src/main/java/com/reactnativecompressor/Video/VideoCompressor/utils/CompressorUtils.kt
++++ b/node_modules/react-native-compressor/android/src/main/java/com/reactnativecompressor/Video/VideoCompressor/utils/CompressorUtils.kt
+@@ -99,13 +99,11 @@ object CompressorUtils {
+           MediaFormat.KEY_BITRATE_MODE,
+           MediaCodecInfo.EncoderCapabilities.BITRATE_MODE_VBR
+         )
+-        // Hint the hardware codec to run as fast as it can (not throttled to
+-        // realtime playback) and at the highest scheduling priority. These keys
+-        // unlock full throughput on Qualcomm / Exynos / MTK SoCs that accept them.
+-        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.M) {
+-          setInteger(MediaFormat.KEY_PRIORITY, 0)
+-          setInteger(MediaFormat.KEY_OPERATING_RATE, Short.MAX_VALUE.toInt())
+-        }
++        // KEY_PRIORITY = 0 (realtime) with KEY_OPERATING_RATE = Short.MAX_VALUE is not set.
++        // Exynos encoders (c2.exynos.h264.encoder) accept it in configure() and then fail
++        // start() with NO_MEMORY ("real-time(32767 fps) is not supported"), which the
++        // configure() fallback in prepareEncoder does not catch. Offline transcoding runs
++        // as fast as the codec allows without a realtime priority.
+       }
+ 
+       getColorStandard(inputFormat)?.let {
