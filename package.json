@@ -1,28 +1,36 @@
 {
-  "name": "video-compression-app",
-  "private": true,
+  "name": "clippress",
   "version": "0.0.0",
-  "type": "module",
+  "private": true,
+  "main": "index.ts",
   "scripts": {
-    "dev": "vite",
-    "build": "tsc -b && vite build",
-    "preview": "vite preview",
-    "server": "node server/server.mjs"
+    "start": "expo start",
+    "android": "expo run:android",
+    "ios": "expo run:ios",
+    "typecheck": "tsc --noEmit",
+    "postinstall": "patch-package"
   },
   "dependencies": {
-    "@ffmpeg/core-mt": "^0.12.6",
-    "@ffmpeg/ffmpeg": "^0.12.15",
-    "@ffmpeg/util": "^0.12.2",
-    "react": "^19.2.8",
-    "react-dom": "^19.2.8"
+    "@expo/vector-icons": "^15.0.3",
+    "@react-native-async-storage/async-storage": "2.2.0",
+    "expo": "~57.0.27",
+    "expo-document-picker": "~57.0.3",
+    "expo-file-system": "~57.0.7",
+    "expo-font": "~57.0.4",
+    "expo-media-library": "~57.0.5",
+    "expo-sharing": "~57.0.22",
+    "expo-splash-screen": "~57.0.9",
+    "expo-status-bar": "~57.0.1",
+    "expo-video": "~57.0.5",
+    "react": "19.2.3",
+    "react-native": "0.86.3",
+    "react-native-compressor": "2.0.3",
+    "react-native-nitro-modules": "^0.37.1",
+    "react-native-safe-area-context": "~5.7.0"
   },
   "devDependencies": {
-    "@types/node": "^24.13.3",
-    "@types/react": "^19.2.17",
-    "@types/react-dom": "^19.2.3",
-    "@vitejs/plugin-react": "^4.4.1",
-    "sharp": "^0.35.3",
-    "typescript": "~5.7.3",
-    "vite": "^6.3.5"
+    "@types/react": "~19.2.4",
+    "patch-package": "^8.0.1",
+    "typescript": "~6.0.3"
   }
 }

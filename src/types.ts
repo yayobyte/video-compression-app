@@ -1,36 +1,33 @@
-import type { Profile } from '../shared/domain'
+import type { Profile } from './domain'
 
-export type JobStatus = 'ready' | 'queued' | 'converting' | 'completed' | 'failed' | 'cancelled'
-
-export type BrowserFileHandle = { kind: 'file'; getFile: () => Promise<File> }
-
-export type BrowserDirectoryHandle = {
-  values: () => AsyncIterable<BrowserFileHandle | { kind: string }>
-  getFileHandle: (name: string, options: { create: boolean }) => Promise<{ createWritable: () => Promise<{ write: (data: Blob) => Promise<void>; close: () => Promise<void> }> }>
-}
-
-export type DirectoryPickerWindow = Window & { showDirectoryPicker?: () => Promise<BrowserDirectoryHandle> }
+export type JobStatus = 'ready' | 'converting' | 'completed' | 'failed' | 'cancelled'
 
 export type VideoAsset = {
   id: string
-  file: File
-  sourceHandle?: BrowserFileHandle
   name: string
   size: number
-  url: string
-  duration?: number
-  width?: number
-  height?: number
-  resolution?: string
+  uri: string
   profile: Profile
-  progress: number
   status: JobStatus
-  outputUrl?: string
-  outputName?: string
+  progress: number
+  outputUri?: string
   outputSize?: number
   error?: string
+  sourceDeleted?: boolean
 }
 
-export type PreviewSelection = { video: VideoAsset; version: 'original' | 'compressed' }
+export const STATUS_LABEL: Record<JobStatus, string> = {
+  ready: 'Ready',
+  converting: 'Converting',
+  completed: 'Completed',
+  failed: 'Failed',
+  cancelled: 'Cancelled',
+}
 
-export type EngineState = 'idle' | 'loading' | 'ready' | 'error'
+export const STATUS_STYLE = {
+  ready: 'status_ready',
+  converting: 'status_converting',
+  completed: 'status_completed',
+  failed: 'status_failed',
+  cancelled: 'status_cancelled',
+} as const satisfies Record<JobStatus, string>

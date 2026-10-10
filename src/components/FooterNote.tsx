@@ -1,5 +1,14 @@
+import { StyleSheet, Text } from 'react-native'
+import { colors, spacing, typography } from '../theme'
+
 export default function FooterNote({ completed }: { completed: number }) {
   return (
-    <footer className="footer-note"><span className="dot" /> {completed} completed · Browser conversion uses FFmpeg/WASM and may be slow for large 4K files.</footer>
+    <Text style={styles.footer}>
+      Compression runs on this phone ({completed} completed). Your videos never leave it.
+    </Text>
   )
 }
+
+const styles = StyleSheet.create({
+  footer: { ...typography.caption, color: colors.textMuted, textAlign: 'center', paddingTop: spacing.sm },
+})

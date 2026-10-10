@@ -1,7 +1,7 @@
 import { Ionicons } from '@expo/vector-icons'
 import { Pressable, StyleSheet, Text, View } from 'react-native'
-import { formatBytes } from '../../../shared/domain'
-import type { StorageRoot, StorageStats } from '../compressionService'
+import { formatBytes } from '../domain'
+import type { StorageRoot, StorageStats } from '../storage'
 import { buttons, colors, gaps, radius, spacing, surfaces, typography } from '../theme'
 
 type Props = {

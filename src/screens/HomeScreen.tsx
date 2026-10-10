@@ -5,23 +5,21 @@ import { colors, gaps, radius, spacing, surfaces, typography } from '../theme'
 import ActionButtons from '../components/ActionButtons'
 import BrandHeader from '../components/BrandHeader'
 import EmptyState from '../components/EmptyState'
-import EngineSwitch from '../components/EngineSwitch'
 import FooterNote from '../components/FooterNote'
-import ProfileSwitches from '../components/ProfileSwitches'
-import ServerConfigCard from '../components/ServerConfigCard'
+import ProfilePicker from '../components/ProfilePicker'
 import StorageInspector from '../components/StorageInspector'
 import VideoCard from '../components/VideoCard'
+import { isOnDeviceAvailable } from '../compressor'
 import useAssets from '../hooks/useAssets'
-import useEngine from '../hooks/useEngine'
 import usePersistence from '../hooks/usePersistence'
-import useServerConnection from '../hooks/useServerConnection'
 import useStorage from '../hooks/useStorage'
 
+// Checked once: the native module is either in this build or not.
+const COMPRESSOR_AVAILABLE = isOnDeviceAvailable()
+
 export default function HomeScreen() {
-  const server = useServerConnection()
   const storage = useStorage()
-  const engine = useEngine()
-  const assets = useAssets(server.serverUrl, server.pingServer, engine.engine)
+  const assets = useAssets()
   const persisted = usePersistence({
     assets: assets.assets,
     globalProfile: assets.globalProfile,
@@ -39,19 +37,12 @@ export default function HomeScreen() {
 
         {persisted.notice ? <Text style={styles.notice}>{persisted.notice}</Text> : null}
 
+        {COMPRESSOR_AVAILABLE ? null : (
+          <Text style={styles.notice}>Compression needs a dev or Release build. It isn't available in Expo Go.</Text>
+        )}
+
         <View style={styles.controlCard}>
-          <EngineSwitch engine={engine.engine} deviceAvailable={engine.deviceAvailable} onChange={engine.setEngine} />
-          <View style={styles.divider} />
-          <ProfileSwitches profile={assets.globalProfile} onChange={assets.setGlobalProfile} isCodecLocked={engine.engine === 'device'} />
-          {engine.engine === 'server' ? <View style={styles.divider} /> : null}
-          {engine.engine === 'server' ? <ServerConfigCard
-            serverInput={server.serverInput}
-            savingServer={server.savingServer}
-            serverHealth={server.serverHealth}
-            onChangeInput={server.setServerInput}
-            onApply={server.applyServerUrl}
-            onCheck={() => void server.pingServer(server.serverUrl)}
-          /> : null}
+          <ProfilePicker profile={assets.globalProfile} onChange={assets.setGlobalProfile} />
         </View>
 
         <ActionButtons canStart={assets.canStart} busy={assets.busy} onImport={() => void assets.importVideos()} onConvert={assets.convertAll} />
@@ -65,11 +56,11 @@ export default function HomeScreen() {
             previewOpen={assets.preview === asset.id}
             onTogglePreview={() => assets.setPreview((current) => current === asset.id ? null : asset.id)}
             onConvert={() => void assets.runConvert(asset)}
-            onCancel={engine.engine === 'device' && asset.phase === 'compressing' ? () => assets.cancelConvert(asset) : undefined}
+            onCancel={() => assets.cancelConvert(asset)}
             onShare={() => void assets.shareOutput(asset)}
             onSaveToGallery={() => void assets.saveToGallery(asset)}
             onDeleteOriginal={() => assets.deleteOriginal(asset)}
-            onSetProfile={(codec, crf) => assets.setProfileOn(asset.id, asset.name, codec, crf)}
+            onSetProfile={(profile) => assets.setProfileOn(asset.id, asset.name, profile)}
           />
         )) : (
           <EmptyState />
@@ -87,6 +78,5 @@ const styles = StyleSheet.create({
   title: { ...typography.title, color: colors.text, marginTop: spacing.xxs },
   titleAccent: { color: colors.accent },
   notice: { ...typography.captionEmphasis, color: colors.accent, backgroundColor: colors.surfaceScrim, padding: spacing.sm, borderRadius: radius.md, textAlign: 'center' },
-  controlCard: { ...surfaces.card, gap: gaps.sm },
-  divider: { ...surfaces.divider, marginVertical: spacing.xxs },
+  controlCard: { ...surfaces.card, gap: gaps.md },
 })

@@ -1,71 +1,62 @@
-# Video Compression App (Clippress)
+# Clippress
 
-Local-first video compression across the web and iPhone, powered by FFmpeg.
+Compress videos on your phone. Clippress is an Expo (React Native) app for iOS and Android that re-encodes videos with the phone's own hardware encoder through [`react-native-compressor`](https://github.com/numandev1/react-native-compressor). Nothing is uploaded, and no server is involved.
 
-- **Web app** (`src/`) — React + TypeScript + Vite, compresses entirely in the browser via `@ffmpeg/core-mt` (WASM). No uploads.
-- **Mobile app** (`mobile/`) — Expo SDK 54 app for iOS. Converts by uploading to a local compression service on your Mac.
-- **Compression service** (`server/`) — small Node/Express service backed by the host's `ffmpeg`, run by the mobile app.
-
-## Docs
-
-- [`ARCHITECTURE.md`](./ARCHITECTURE.md) — architecture decisions, platform contracts, and deviations from the original proposal.
-- [`DESIGN.md`](./DESIGN.md) — Revolut-inspired design system, tokens, and UI direction.
-- [`PROGRESS.md`](./PROGRESS.md) — milestone status, current limitations, and next work.
-- [`RESUME.md`](./RESUME.md) — detailed session notes: every bug fixed (H.265 hangs, 4K OOM, iOS 1.5 GB crashes, "stuck at 1%") and how to resume work.
-- [`server/README.md`](./server/README.md) — how the compression service works: API, job lifecycle, storage, and troubleshooting.
+- **Output:** H.264 `.mp4`, which plays everywhere, including web browsers. iPhone HEVC/HDR sources are converted too.
+- **Quality:** High / Balanced / Small. Each preset sets a bitrate from the video's pixel count (0.09 / 0.06 / 0.04 bits per pixel per frame at an assumed 30 fps), never above 80% of the source bitrate.
+- **Max resolution:** Original / 1080p / 720p / 480p. It caps the long edge and never upscales.
+- **Global default + per-video override:** the home screen sets the profile new imports get, and each card can change its own before converting.
+- **On a card:** Cancel, Preview, Share, Save to gallery and Delete original. The library survives app restarts.
 
 ## Requirements
 
-- Node 20+ (mobile tooling works best on a Node 24 LTS — Node 26 breaks Expo's type-stripped config plugins)
-- [FFmpeg](https://ffmpeg.org/) installed at `/opt/homebrew/bin/ffmpeg` (Homebrew: `brew install ffmpeg`) — needed by the compression service
-- Chrome/Edge for the web encoder (cross-origin isolation required); Safari is not a target
-- Xcode + CocoaPods for the iOS build
+- Node 20+ (Node 24 LTS recommended)
+- **Android:** Android Studio / SDK, with `ANDROID_HOME` set:
+  ```sh
+  export ANDROID_HOME=$HOME/Library/Android/sdk
+  export PATH=$PATH:$ANDROID_HOME/platform-tools:$ANDROID_HOME/emulator
+  ```
+- **iOS:** Xcode + CocoaPods.
 
-## Web app
+## Run
 
-```bash
-npm install
-npm run dev        # http://localhost:5173/ (must be localhost for H.265)
-npm run build      # typecheck + production build
-npm run preview    # serve the production build
+```sh
+npm install            # also applies patches/ via patch-package
+npx expo run:android   # or: npx expo run:ios
 ```
 
-The browser encoder needs COOP/COEP isolation headers (set in `vite.config.ts`). Any production static host must serve these headers too.
+The compressor is a native (Nitro) module, so the app needs a dev or Release build. It does not run in Expo Go: the app opens there, but Convert reports that compression is unavailable.
 
-## Compression service
+After changing native dependencies or `app.json`, regenerate the native projects with `npx expo prebuild --clean`. `android/` and `ios/` are generated and git-ignored.
 
-```bash
-npm install
-npm run server     # binds 0.0.0.0:8787, spawns the host's ffmpeg
+`npm run typecheck` runs TypeScript.
+
+## Where compressed videos go
+
+Outputs are saved to the app's `Documents/clippress/` folder as `<name>.compressed.<quality>.<resolution>.mp4`.
+
+- **iOS:** the folder is visible in the Files app under *On My iPhone › Clippress*.
+- **Android:** the folder is private to the app. Use **Save to gallery** (a *Clippress* album in Gallery / Photos) or **Share**.
+
+## Samsung Exynos patch
+
+`react-native-compressor@2.0.3` sets `KEY_PRIORITY`/`KEY_OPERATING_RATE` on the Android encoder. Exynos chips (most Galaxy A models) accept them in `configure()` and then fail `start()` with `NO_MEMORY`. `patches/react-native-compressor+2.0.3.patch` removes the two keys, and the version is pinned exactly because the patch is version-specific. Drop the patch once a release includes the upstream fix. See [`VIDEO-COMPRESSION-HANDOFF.md`](./VIDEO-COMPRESSION-HANDOFF.md) for the full investigation.
+
+## Project layout
+
+```
+App.tsx, index.ts      entry
+src/screens/           HomeScreen
+src/components/        UI pieces (ProfilePicker, VideoCard, SegmentedControl, …)
+src/hooks/             useAssets (library + conversions), usePersistence, useStorage
+src/compressor.ts      react-native-compressor wrapper + bitrate/size math
+src/domain.ts          profile model, output names, formatting
+src/storage.ts         output folder, storage inspection and cleanup
+src/persistence.ts     AsyncStorage library save/restore
+src/theme.ts           design tokens (see DESIGN.md)
 ```
 
-Health check: `curl http://localhost:8787/api/health`
+## Docs
 
-## Mobile app
-
-```bash
-cd mobile
-npm install
-npx expo start     # run in Expo Go on the phone (SDK 54)
-```
-
-In Expo Go the app auto-discovers the host Mac; for a compiled build, set `http://<your-Mac-LAN-IP>:8787` in the in-app Compression service field.
-
-### Standalone iOS build
-
-```bash
-cd mobile
-npx expo prebuild -p ios && npx pod-install   # once, when native deps change
-npx expo run:ios --configuration Release --device
-```
-
-Compiled builds embed the JS bundle (no Metro needed at runtime) and require the local-networking keys already present in `mobile/app.json`. Free Apple ID builds need developer-trust approval on the device and expire after 7 days. See `RESUME.md` → "Standalone iOS build" for details.
-
-## Verified profile
-
-Default is **H.265 / CRF 25**. Server-side output is tagged `hvc1` so HEVC plays (with video, not audio-only) on Apple devices.
-
-## Notes
-
-- Watch out for zombie compression-server processes: `pkill -f "server.mjs"` before restarting, or port 8787 serves stale code (`EADDRINUSE`).
-- Media folders (`DJI/`) and test clips (`*.MP4`) are gitignored.
+- [`DESIGN.md`](./DESIGN.md): design system and tokens.
+- [`VIDEO-COMPRESSION-HANDOFF.md`](./VIDEO-COMPRESSION-HANDOFF.md): library choice, API gotchas, the Exynos bug and test recipes.

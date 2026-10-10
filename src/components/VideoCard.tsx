@@ -1,33 +1,105 @@
-import { formatBytes } from '../../shared/domain'
-import type { Codec, Crf, Profile } from '../../shared/domain'
+import { ActivityIndicator, StyleSheet, Text, View } from 'react-native'
+import { QUALITY_OPTIONS, RESOLUTION_OPTIONS, formatBytes } from '../domain'
+import type { Profile } from '../domain'
+import { colors, gaps, radius, spacing, surfaces, typography } from '../theme'
 import type { VideoAsset } from '../types'
-import { formatDuration } from '../utils/media'
+import { ratioText } from '../utils/status'
+import CardPreview from './CardPreview'
+import LinkAction from './LinkAction'
+import SegmentedControl from './SegmentedControl'
+import StatusBadge from './StatusBadge'
 
 type Props = {
-  video: VideoAsset
-  onPreview: (version: 'original' | 'compressed') => void
-  onProfileChange: (patch: Partial<Profile>) => void
+  asset: VideoAsset
+  previewOpen: boolean
+  onTogglePreview: () => void
   onConvert: () => void
   onCancel: () => void
+  onShare: () => void
+  onSaveToGallery: () => void
+  onDeleteOriginal: () => void
+  onSetProfile: (profile: Profile) => void
 }
 
-export default function VideoCard({ video, onPreview, onProfileChange, onConvert, onCancel }: Props) {
-  const busy = video.status === 'converting' || video.status === 'queued'
+export default function VideoCard({ asset, previewOpen, onTogglePreview, onConvert, onCancel, onShare, onSaveToGallery, onDeleteOriginal, onSetProfile }: Props) {
+  const converting = asset.status === 'converting'
+  const completed = asset.status === 'completed'
   return (
-    <article className="video-card">
-      <button className="thumbnail" onClick={() => onPreview('original')} aria-label={`Preview ${video.name}`}><video src={video.url} muted preload="metadata" /><span className="play">▶</span><span className="duration">{formatDuration(video.duration)}</span></button>
-      <div className="card-body">
-        <div className="card-title"><h2 title={video.name}>{video.name}</h2><span className={`status ${video.status}`}>{video.status === 'ready' ? 'Ready' : video.status}</span></div>
-        <div className="metadata"><span>{formatBytes(video.size)}</span><span>{video.resolution ?? 'Reading…'}</span><span>{video.file.type.replace('video/', '').toUpperCase() || 'VIDEO'}</span></div>
-        <div className="card-profile">
-          <div className="mini-segmented">{(['h265', 'h264'] as Codec[]).map((codec) => <button key={codec} disabled={busy} onClick={() => onProfileChange({ codec })} className={video.profile.codec === codec ? 'selected' : ''}>{codec.toUpperCase()}</button>)}</div>
-          <div className="mini-segmented">{([25, 28] as Crf[]).map((crf) => <button key={crf} disabled={busy} onClick={() => onProfileChange({ crf })} className={video.profile.crf === crf ? 'selected' : ''}>{crf}</button>)}</div>
-        </div>
-        {busy && <div className="progress-wrap"><div className="progress-label"><span>{video.status === 'queued' ? 'Queued locally' : video.progress < 2 ? 'Preparing encoder' : 'Converting locally'}</span><span>{video.status === 'queued' ? 'Waiting' : `${video.progress}%`}</span></div><div className="progress"><span style={{ width: `${video.status === 'queued' ? 0 : video.progress}%` }} /></div></div>}
-        {video.status === 'completed' && <div className="completed-row"><span>✓ {formatBytes(video.outputSize)} compressed</span><button onClick={() => onPreview('compressed')}>Open compressed</button></div>}
-        {video.status === 'failed' && <p className="error-message">{video.error}</p>}
-        <div className="card-actions"><button className="link-button" onClick={() => onPreview('original')}>Open original</button>{busy ? <button className="link-button danger" onClick={onCancel}>Cancel</button> : <button className="convert-button" onClick={onConvert}>{video.status === 'completed' ? 'Re-convert' : video.status === 'failed' ? 'Try again' : 'Convert'}</button>}</div>
-      </div>
-    </article>
+    <View style={styles.card}>
+      <View style={styles.cardHead}>
+        <Text style={styles.cardName} numberOfLines={1}>{asset.name}</Text>
+        <StatusBadge status={asset.status} />
+      </View>
+      <Text style={styles.cardMeta}>{formatBytes(asset.size)}{asset.outputSize ? ` → ${formatBytes(asset.outputSize)}` : ''}</Text>
+      {completed && asset.outputSize ? <Text style={styles.savedText}>{ratioText(asset)}</Text> : null}
+      {asset.sourceDeleted ? (
+        <Text style={styles.deletedHint}>Original deleted · compressed copy kept</Text>
+      ) : (
+        <View style={styles.cardProfileRow}>
+          <View style={styles.cardProfileColumn}>
+            <Text style={styles.cardProfileLabel}>Quality</Text>
+            <SegmentedControl
+              size="compact"
+              options={QUALITY_OPTIONS}
+              value={asset.profile.quality}
+              disabled={converting}
+              onChange={(quality) => onSetProfile({ ...asset.profile, quality })}
+            />
+          </View>
+          <View style={styles.cardProfileColumn}>
+            <Text style={styles.cardProfileLabel}>Max resolution</Text>
+            <SegmentedControl
+              size="compact"
+              options={RESOLUTION_OPTIONS}
+              value={asset.profile.maxResolution}
+              disabled={converting}
+              onChange={(maxResolution) => onSetProfile({ ...asset.profile, maxResolution })}
+            />
+          </View>
+        </View>
+      )}
+      {converting && (
+        <View style={styles.progress}>
+          <Text style={styles.progressLabel}>Compressing on this phone… {asset.progress}%</Text>
+          <View style={styles.progressTrack}><View style={[styles.progressFill, { width: `${Math.max(asset.progress, 2)}%` }]} /></View>
+        </View>
+      )}
+      {asset.status === 'failed' && asset.error ? <Text style={styles.errorText}>{asset.error}</Text> : null}
+      <View style={styles.cardActions}>
+        <LinkAction icon={previewOpen ? 'close-outline' : 'play-outline'} label={previewOpen ? 'Close preview' : 'Preview'} onPress={onTogglePreview} />
+        {converting
+          ? <>
+              <ActivityIndicator size="small" color={colors.primarySoft} />
+              <LinkAction icon="close-circle-outline" label="Cancel" onPress={onCancel} />
+            </>
+          : completed
+            ? <>
+                {!asset.sourceDeleted && <LinkAction icon="trash-outline" label="Delete original" onPress={onDeleteOriginal} />}
+                {!asset.sourceDeleted && <LinkAction icon="refresh-outline" label="Re-convert" onPress={onConvert} />}
+                <LinkAction icon="download-outline" label="Save to gallery" onPress={onSaveToGallery} />
+                <LinkAction icon="share-outline" label="Share" onPress={onShare} />
+              </>
+            : <LinkAction icon={asset.status === 'failed' ? 'refresh' : 'play'} label={asset.status === 'failed' ? 'Try again' : 'Convert'} onPress={onConvert} />}
+      </View>
+      {previewOpen && <CardPreview uri={completed && asset.outputUri ? asset.outputUri : asset.uri} />}
+    </View>
   )
 }
+
+const styles = StyleSheet.create({
+  card: { ...surfaces.card, gap: gaps.sm },
+  cardHead: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: gaps.sm },
+  cardName: { ...typography.name, color: colors.text, flex: 1 },
+  cardMeta: { ...typography.heading, color: colors.textMuted },
+  savedText: { ...typography.captionEmphasis, color: colors.accent, marginBottom: spacing.xxs },
+  deletedHint: { ...typography.captionEmphasis, color: colors.textMuted },
+  cardProfileRow: { gap: gaps.sm },
+  cardProfileColumn: { gap: gaps.xxs },
+  cardProfileLabel: { ...typography.micro, color: colors.textMuted },
+  progress: { gap: gaps.xxs },
+  progressLabel: { ...typography.caption, color: colors.textMuted },
+  progressTrack: { height: spacing.sm, borderRadius: radius.sm, backgroundColor: colors.elevated, overflow: 'hidden' },
+  progressFill: { height: spacing.sm, borderRadius: radius.sm, backgroundColor: colors.primarySoft },
+  errorText: { ...typography.caption, color: colors.danger, lineHeight: 17 },
+  cardActions: { flexDirection: 'row', justifyContent: 'space-between', flexWrap: 'wrap', rowGap: gaps.sm, minHeight: 20 },
+})

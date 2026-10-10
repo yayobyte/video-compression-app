@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
-import { clearStoredFiles, getStorageStats, inspectStorage, logStorageState } from '../compressionService'
-import type { StorageRoot, StorageStats } from '../compressionService'
+import { clearStoredFiles, getStorageStats, inspectStorage, logStorageState } from '../storage'
+import type { StorageRoot, StorageStats } from '../storage'
 
 // Storage usage + Clear-stored-files state for the empty-state banner. Also
 // runs the full-disk inspection (all four sandbox roots) so the banner can show

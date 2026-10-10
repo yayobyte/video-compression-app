@@ -11,10 +11,6 @@
       "supportsTablet": true,
       "bundleIdentifier": "com.clippress.mobile",
       "infoPlist": {
-        "NSAppTransportSecurity": {
-          "NSAllowsLocalNetworking": true
-        },
-        "NSLocalNetworkUsageDescription": "Connect to your compression server on the local network.",
         "UIFileSharingEnabled": true,
         "LSSupportsOpeningDocumentsInPlace": true
       },
